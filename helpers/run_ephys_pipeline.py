@@ -21,6 +21,7 @@ from helpers.preprocess_files import preprocess_files, find_spoutfile_and_breakp
 from firing_rate_analysis.get_fr_toTrials import get_fr_toTrials
 from auROC_analysis.calculate_auROC import *
 
+
 def run_pipeline(input_list):
     # Gather settings
     _, _, SETTINGS_DICT = input_list
