@@ -109,13 +109,6 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
 
         # Active data
         try:
-
-            # Something strange happened on SUBJ-ID-390 6/27/22 Active where DACs become out of sync with
-            # ePsych by a variable offset starting when the animal regressed in AM depth difficulty
-            # after AM trial 7 (TrialID 178 on); remove this day here
-            if "_".join(split('_*_', unit)[0:2]) == 'SUBJ-ID-390_220627':
-                continue
-                
             cur_data = data_dict[unit]['active']
 
             for trial_type in list(trial_types.keys()):
