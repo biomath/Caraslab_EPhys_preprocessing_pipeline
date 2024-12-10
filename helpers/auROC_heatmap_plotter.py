@@ -18,7 +18,6 @@ if platform.system() == 'Windows':
 else:
     REGEX_SEP = sep
 
-
 def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
     output_path = SETTINGS_DICT['OUTPUT_PATH'] + sep + 'auROC_heatmaps'
     makedirs(output_path, exist_ok=True)
@@ -29,14 +28,20 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
     trial_types = SETTINGS_DICT['AUROC_TRIALTYPES']
     sort_by_which_trial_type = SETTINGS_DICT['SORT_BY_WHICH_TRIALTYPE']
 
-    auROC_grouping_file = pd.read_csv(SETTINGS_DICT['AUROC_GROUPING_FILE'])
-    auROC_grouping_variable = SETTINGS_DICT['AUROC_GROUPING_VARIABLE']
-    auROC_unique_groups = SETTINGS_DICT['AUROC_UNIQUE_GROUPS']
-    if auROC_unique_groups is None:
-        auROC_unique_groups = set(auROC_grouping_file[auROC_grouping_variable])
+    if SETTINGS_DICT['AUROC_GROUPING_FILE'] is not None:
+        auROC_grouping_file = pd.read_csv(SETTINGS_DICT['AUROC_GROUPING_FILE'])
+        auROC_grouping_variable = SETTINGS_DICT['AUROC_GROUPING_VARIABLE']
+        auROC_unique_groups = SETTINGS_DICT['AUROC_UNIQUE_GROUPS']
+        if auROC_unique_groups is None:
+            auROC_unique_groups = set(auROC_grouping_file[auROC_grouping_variable])
 
-    auROC_group_colors = SETTINGS_DICT['AUROC_GROUP_COLORS']
-    if auROC_group_colors is None:
+        auROC_group_colors = SETTINGS_DICT['AUROC_GROUP_COLORS']
+        if auROC_group_colors is None:
+            auROC_group_colors = colormaps['tab20'].colors
+    else:
+        auROC_grouping_file = None
+        auROC_grouping_variable = None
+        auROC_unique_groups = ['all',]
         auROC_group_colors = colormaps['tab20'].colors
 
     # Set plotting parameters
@@ -85,8 +90,10 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
             unit_list.append(unit)
             trialType_list.append('PassivePre')
         except KeyError:
-            # Skip unit if no Pre
-            continue
+            response_curve = np.NaN
+            auroc_list.append(response_curve)
+            unit_list.append(unit)
+            trialType_list.append('PassivePre')
 
         # Post data
         try:
@@ -112,7 +119,7 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
             cur_data = data_dict[unit]['active']
 
             for trial_type in list(trial_types.keys()):
-                if 'Passive' in trial_type:
+                if 'Passive' in trial_type:  # Just in case
                     continue
                 response_curve = np.array(cur_data[trial_type])
 
@@ -125,7 +132,7 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
                 trialType_list.append(trial_type)
         except KeyError:
             for trial_type in list(trial_types.keys()):
-                if 'Passive' in trial_type:
+                if 'Passive' in trial_type:  # Just in case
                     continue
                 response_curve = np.NaN
                 auroc_list.append(response_curve)
@@ -146,7 +153,7 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
         trial_type = sort_by_which_trial_type
 
         if cur_group == 'all':
-            cur_units = auROC_grouping_file['Unit'].values
+            cur_units = unique_units
         else:
             cur_units = auROC_grouping_file[auROC_grouping_file[auROC_grouping_variable] == cur_group]['Unit'].values
 

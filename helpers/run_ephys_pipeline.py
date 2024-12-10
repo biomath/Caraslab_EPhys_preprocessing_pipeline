@@ -72,7 +72,7 @@ def run_pipeline(input_list):
                                            pre_stim_raster=pretrial_duration_for_spiketimes,
                                            post_stim_raster=posttrial_duration_for_spiketimes,
                                            afterTrial_FR_start=afterTrial_FR_start, afterTrial_FR_end=afterTrial_FR_end)
-            write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+            write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         '''
         THE FOLLOWING BLOCK OF FUNCTIONS IS ONLY RELEVANT FOR ACTIVE SESSIONS
@@ -86,7 +86,7 @@ def run_pipeline(input_list):
                                                            pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                            post_stimulus_raster=posttrial_duration_for_spiketimes
                                                            )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
             if pipeline_switchboard['auROC_spoutOffFA']:
                 cur_unitData = calculate_auROC_spoutOffFA(cur_unitData=cur_unitData,
@@ -96,7 +96,7 @@ def run_pipeline(input_list):
                                                           pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                           post_stimulus_raster=posttrial_duration_for_spiketimes
                                                           )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
             if pipeline_switchboard['auROC_spoutOffMiss']:
                 cur_unitData = calculate_auROC_spoutOffMiss(cur_unitData=cur_unitData,
@@ -106,7 +106,7 @@ def run_pipeline(input_list):
                                                             pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                             post_stimulus_raster=posttrial_duration_for_spiketimes
                                                             )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
             if pipeline_switchboard['auROC_hit']:
                 cur_unitData = calculate_auROC_hit(cur_unitData=cur_unitData,
@@ -116,7 +116,7 @@ def run_pipeline(input_list):
                                                    pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                    post_stimulus_raster=posttrial_duration_for_spiketimes
                                                    )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
             if pipeline_switchboard['auROC_hitByShock']:
                 # For fair comparison with shocked misses
@@ -127,7 +127,7 @@ def run_pipeline(input_list):
                                                           pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                           post_stimulus_raster=posttrial_duration_for_spiketimes
                                                           )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
             if pipeline_switchboard['auROC_FA']:
                 cur_unitData = calculate_auROC_FA(cur_unitData=cur_unitData,
@@ -137,7 +137,7 @@ def run_pipeline(input_list):
                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                   post_stimulus_raster=posttrial_duration_for_spiketimes
                                                   )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
             if pipeline_switchboard['auROC_missByShock']:
                 cur_unitData = calculate_auROC_missByShock(cur_unitData=cur_unitData,
@@ -147,7 +147,7 @@ def run_pipeline(input_list):
                                                            pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                            post_stimulus_raster=posttrial_duration_for_spiketimes
                                                            )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
             if pipeline_switchboard['auROC_miss']:
                 cur_unitData = calculate_auROC_miss(cur_unitData=cur_unitData,
@@ -158,7 +158,7 @@ def run_pipeline(input_list):
                                                     post_stimulus_raster=posttrial_duration_for_spiketimes
                                                     )
 
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         '''
         COMPUTATIONS RELEVANT TO BOTH PASSIVE AND ACTIVE SESSIONS
@@ -171,7 +171,7 @@ def run_pipeline(input_list):
                                                    pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                    post_stimulus_raster=posttrial_duration_for_spiketimes
                                                    )
-            write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+            write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         if pipeline_switchboard['auROC_AMdepthByAMdepth']:
             cur_unitData = calculate_auROC_AMdepthByAMdepth(cur_unitData=cur_unitData,
@@ -181,4 +181,4 @@ def run_pipeline(input_list):
                                                             pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                             post_stimulus_raster=posttrial_duration_for_spiketimes
                                                             )
-            write_json(cur_unitData, output_path + sep + 'JSON files', cur_data['Unit'] + '_unitData.json')
+            write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
