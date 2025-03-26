@@ -17,6 +17,7 @@ from glob import glob
 from helpers.compile_fr_result_csv import compile_fr_result_csv
 from helpers.write_json import write_json
 from helpers.preprocess_files import preprocess_files, find_spoutfile_and_breakpoint
+from helpers.recalculate_ePsych_responseLatency import recalculate_ePsych_responseLatency
 
 from firing_rate_analysis.get_fr_toTrials import get_fr_toTrials
 from auROC_analysis.calculate_auROC import *
@@ -36,6 +37,9 @@ def run_pipeline(input_list):
     afterTrial_FR_start = SETTINGS_DICT['AFTERTRIAL_FR_START']
     afterTrial_FR_end = SETTINGS_DICT['AFTERTRIAL_FR_END']
 
+    psth_bin_size = SETTINGS_DICT['PSTH_BIN_SIZE']
+    auroc_bin_size = SETTINGS_DICT['AUROC_BIN_SIZE']
+
     memory_path, key_paths_info, key_paths_spout, cur_unitData, cur_breakpoint_df = (
         preprocess_files(input_list))
 
@@ -48,6 +52,7 @@ def run_pipeline(input_list):
                                                                           key_path_info, key_paths_spout,
                                                                           cur_breakpoint_df, recording_type,
                                                                           sampling_rate)
+
         # Add keys to JSON structure if they don't already exist
         try:
             if split(REGEX_SEP, key_path_info)[-1][:-4] not in cur_unitData["Session"]:
@@ -71,114 +76,207 @@ def run_pipeline(input_list):
                                            trial_duration_for_fr=trial_duration_for_fr,
                                            pre_stim_raster=pretrial_duration_for_spiketimes,
                                            post_stim_raster=posttrial_duration_for_spiketimes,
-                                           afterTrial_FR_start=afterTrial_FR_start, afterTrial_FR_end=afterTrial_FR_end)
+                                           aftertrial_FR_start=afterTrial_FR_start, aftertrial_FR_end=afterTrial_FR_end)
             write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         '''
         THE FOLLOWING BLOCK OF FUNCTIONS IS ONLY RELEVANT FOR ACTIVE SESSIONS
         '''
         if 'Passive' not in key_finder:
-            if pipeline_switchboard['auROC_spoutOffHit']:
-                cur_unitData = calculate_auROC_spoutOffHit(cur_unitData=cur_unitData,
-                                                           session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                           pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                           pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                           pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                           post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                           )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
-
-            if pipeline_switchboard['auROC_spoutOffFA']:
-                cur_unitData = calculate_auROC_spoutOffFA(cur_unitData=cur_unitData,
-                                                          session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                          pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                          pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                          pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                          post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                          )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
-
-            if pipeline_switchboard['auROC_spoutOffMiss']:
-                cur_unitData = calculate_auROC_spoutOffMiss(cur_unitData=cur_unitData,
-                                                            session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                            pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                            pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                            pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                            post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                            )
-                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
-
-            if pipeline_switchboard['auROC_hit']:
-                cur_unitData = calculate_auROC_hit(cur_unitData=cur_unitData,
-                                                   session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+            if pipeline_switchboard['TrialAligned_Hit_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='trialAligned',
                                                    pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
                                                    pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
                                                    pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                   post_stimulus_raster=posttrial_duration_for_spiketimes
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag='All',
+                                                   trial_type='Hit',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
                                                    )
                 write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
-            if pipeline_switchboard['auROC_hitByShock']:
-                # For fair comparison with shocked misses
-                cur_unitData = calculate_auROC_hitByShock(cur_unitData=cur_unitData,
-                                                          session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                          pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                          pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                          pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                          post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                          )
+            if pipeline_switchboard['TrialAligned_Hit_shockFlagOn_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='trialAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag=1,
+                                                   trial_type='Hit',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
                 write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
-            if pipeline_switchboard['auROC_FA']:
-                cur_unitData = calculate_auROC_FA(cur_unitData=cur_unitData,
-                                                  session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                  pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                  pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                  pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                  post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                  )
+            if pipeline_switchboard['TrialAligned_FA_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='trialAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag='All',
+                                                   trial_type='FA',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
                 write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
-            if pipeline_switchboard['auROC_missByShock']:
-                cur_unitData = calculate_auROC_missByShock(cur_unitData=cur_unitData,
-                                                           session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                           pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                           pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                           pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                           post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                           )
+            if pipeline_switchboard['TrialAligned_Miss_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='trialAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag='All',
+                                                   trial_type='Miss',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
                 write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
-            if pipeline_switchboard['auROC_miss']:
-                cur_unitData = calculate_auROC_miss(cur_unitData=cur_unitData,
-                                                    session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                    pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                    pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                    pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                    post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                    )
+            if pipeline_switchboard['TrialAligned_Miss_shockFlagOn_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='trialAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag=1,
+                                                   trial_type='Miss',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
+            if pipeline_switchboard['ResponseAligned_Hit_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag='All',
+                                                   trial_type='Hit',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
+
+            if pipeline_switchboard['ResponseAligned_Hit_shockFlagOn_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag=1,
+                                                   trial_type='Hit',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
+
+            if pipeline_switchboard['ResponseAligned_FA_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag='All',
+                                                   trial_type='FA',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
+
+            if pipeline_switchboard['ResponseAligned_Miss_shockFlagOn_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag=1,
+                                                   trial_type='Miss',
+                                                   byAM_depth=False,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
+
+            if pipeline_switchboard['ResponseAligned_Hit_byAMdepth_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag='All',
+                                                   trial_type='Hit',
+                                                   byAM_depth=True,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
+                write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
+
+            if pipeline_switchboard['ResponseAligned_Miss_shockFlagOn_byAMdepth_auroc']:
+                cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag=1,
+                                                   trial_type='Miss',
+                                                   byAM_depth=True,
+                                                   psth_binsize=psth_bin_size,
+                                                   auroc_binsize=auroc_bin_size
+                                                   )
                 write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         '''
         COMPUTATIONS RELEVANT TO BOTH PASSIVE AND ACTIVE SESSIONS
         '''
-        if pipeline_switchboard['auROC_AMTrial']:
-            cur_unitData = calculate_auROC_AMTrial(cur_unitData=cur_unitData,
-                                                   session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                   post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                   )
+        if pipeline_switchboard['TrialAligned_GO_auroc']:
+            cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                               trial_or_response_aligned='trialAligned',
+                                               pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                               pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                               pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                               post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                               shock_flag='All',
+                                               trial_type='GO',
+                                               byAM_depth=False,
+                                               psth_binsize=psth_bin_size,
+                                               auroc_binsize=auroc_bin_size
+                                               )
             write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
-        if pipeline_switchboard['auROC_AMdepthByAMdepth']:
-            cur_unitData = calculate_auROC_AMdepthByAMdepth(cur_unitData=cur_unitData,
-                                                            session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
-                                                            pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
-                                                            pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
-                                                            pre_stimulus_raster=pretrial_duration_for_spiketimes,
-                                                            post_stimulus_raster=posttrial_duration_for_spiketimes
-                                                            )
+        if pipeline_switchboard['TrialAligned_GO_byAMdepth_auroc']:
+            cur_unitData = run_calculate_auROC(cur_unitData, session_name=split(REGEX_SEP, key_path_info)[-1][:-4],
+                                               trial_or_response_aligned='trialAligned',
+                                               pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                               pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                               pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                               post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                               shock_flag='All',
+                                               trial_type='GO',
+                                               byAM_depth=True,
+                                               psth_binsize=psth_bin_size,
+                                               auroc_binsize=auroc_bin_size
+                                               )
             write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')

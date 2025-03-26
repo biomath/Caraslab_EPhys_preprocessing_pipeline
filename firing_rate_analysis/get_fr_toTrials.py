@@ -23,12 +23,17 @@ def get_fr_toTrials(memory_name,
                     experiment_tag=None,
                     first_cell_flag=True,
                     breakpoint_offset=0,
-                    nonAM_duration_for_fr=0.5,
-                    trial_duration_for_fr=0.5,
+                    nonAM_duration_for_fr: dict or int=0.5,
+                    trial_duration_for_fr: dict or int=0.5,
                     pre_stim_raster=2.,  # For timestamped spikeTimes
                     post_stim_raster=4.,  # For timestamped spikeTimes
-                    afterTrial_FR_start=1.3,  # For calculating after-stimulus firing rate; useful for Misses
-                    afterTrial_FR_end=2):
+                    aftertrial_FR_start: dict or int=1.3,  # For calculating after-stimulus firing rate; useful for Misses
+                    aftertrial_FR_end: dict or int=2,
+                    resptime_FR_start: dict or int=0.3,  # For calculating after-response firing rate
+                    resptime_FR_end: dict or int=1.8,
+                    beforeresp_FR_start: dict or int=0.5,  # For calculating pre-response firing rate (will be converted to negative)
+                    beforeresp_FR_end: dict or int=0,
+                    ):
     """
     Process spike data around trials
     Takes key files and writes two files:
@@ -61,27 +66,21 @@ def get_fr_toTrials(memory_name,
     # Baseline will be the CR trial immediately preceding a GO or a FA
     nonAM_FR_list = list()
     trial_FR_list = list()
-    afterTrial_FR_list = list()
+    aftertrial_FR_list = list()
+    resptime_FR_list = list()
+    beforeresp_FR_list = list()
 
     # Raw spike counts
     nonAM_spikeCount_list = list()
     trial_spikeCount_list = list()
-    afterTrial_spikeCount_list = list()
-
-    # Amount of spout onset timestamps around trial
-    nonAM_spoutOn_frequency_list = list()
-    trial_spoutOn_frequency_list = list()
-    afterTrial_spoutOn_frequency_list = list()
-
-    # Amount of spout offset timestamps around trial
-    nonAM_spoutOff_frequency_list = list()
-    trial_spoutOff_frequency_list = list()
-    afterTrial_spoutOff_frequency_list = list()
+    aftertrial_spikeCount_list = list()
+    resptime_spikeCount_list = list()
+    beforeresp_spikeCount_list = list()
 
     # Actual spike and spout timestamps around trial
-    timestamped_trial_spikes = list()
-    spoutOn_timestamps_list = list()
-    spoutOff_timestamps_list = list()
+    zerocentered_trial_spikes = list()
+    zerocentered_response_spikes = list()
+
     for dummy_index, cur_trial in relevant_key_times.iterrows():
         # Get spike times around the current stimulus onset
         # For baseline, go to the previous trial that resulted in a correct rejection (NO-GO) which
@@ -93,104 +92,65 @@ def get_fr_toTrials(memory_name,
             relevant_key_times.drop(dummy_index, inplace=True)
             continue
 
-        # Use different onsets depending on trial type
-        if type(afterTrial_FR_start) is dict:
-            cur_trial_type = ''
-            if cur_trial['Hit'] == 1:
-                cur_trial_type = 'Hit'
-            elif cur_trial['Miss'] == 1:
-                cur_trial_type = 'Miss'
-            else:
-                cur_trial_type = 'FA'
-
-            cur_aftertrial_start = afterTrial_FR_start[cur_trial_type]
-            cur_aftertrial_end = afterTrial_FR_end[cur_trial_type]
+        # Get current trial's response time (i.e., latency)
+        # Only relevant for active sessions
+        # IMPORTANT NOTE: In miss trials, if latency value is during the AM period, this indicates that the animal
+        #   attempted to withdraw from spout before the shock, but returned for some reason. Handle these trials as you wish
+        #   For true undetected misses, respLatency will be after the AM period during the shock period
+        if 'Passive' not in key_path_info:
+            cur_resptime = cur_trial['RespLatency']
         else:
-            cur_aftertrial_start = afterTrial_FR_start
-            cur_aftertrial_end = afterTrial_FR_end
+            cur_resptime = 0
 
+        if cur_trial['Hit'] == 1:
+            cur_trial_type = 'Hit'
+        elif cur_trial['Miss'] == 1:
+            cur_trial_type = 'Miss'
+        else:
+            cur_trial_type = 'FA'
+
+        # Use different onsets depending on trial type
         if type(trial_duration_for_fr) is dict:
-            if cur_trial['Hit'] == 1:
-                cur_trial_type = 'Hit'
-            elif cur_trial['Miss'] == 1:
-                cur_trial_type = 'Miss'
-            else:
-                cur_trial_type = 'FA'
-
             cur_stim_duration_for_fr_s = trial_duration_for_fr[cur_trial_type]
         else:
             cur_stim_duration_for_fr_s = trial_duration_for_fr
 
-        # Count the number of spout onsets and offsets during the current trials; could be interesting...
-        # Also transform to Hz in case I decide to change the window in the future
-        nonAM_spoutOn = \
-            spout_key_times[
-                (spout_key_times['Spout_onset'].values >
-                 previous_cr['Trial_onset']) &
-                (spout_key_times['Spout_onset'].values <
-                 previous_cr['Trial_onset'] + nonAM_duration_for_fr)]['Spout_onset'].values
-        nonAM_spoutOff = \
-            spout_key_times[
-                (spout_key_times['Spout_offset'].values >
-                 previous_cr['Trial_onset']) &
-                (spout_key_times['Spout_offset'].values <
-                 previous_cr['Trial_onset'] + nonAM_duration_for_fr)]['Spout_offset'].values
+        if type(aftertrial_FR_start) is dict:
+            cur_aftertrial_start = aftertrial_FR_start[cur_trial_type]
+            cur_aftertrial_end = aftertrial_FR_end[cur_trial_type]
+        else:
+            cur_aftertrial_start = aftertrial_FR_start
+            cur_aftertrial_end = aftertrial_FR_end
 
-        trial_spoutOn = \
-            spout_key_times[
-                (spout_key_times['Spout_onset'].values >
-                 cur_trial['Trial_onset']) &
-                (spout_key_times['Spout_onset'].values <
-                 cur_trial['Trial_onset'] + cur_stim_duration_for_fr_s)]['Spout_onset'].values
-        trial_spoutOff = \
-            spout_key_times[
-                (spout_key_times['Spout_offset'].values >
-                 cur_trial['Trial_onset']) &
-                (spout_key_times['Spout_offset'].values <
-                 cur_trial['Trial_onset'] + cur_stim_duration_for_fr_s)]['Spout_offset'].values
+        if type(resptime_FR_start) is dict:
+            cur_resptime_start = resptime_FR_start[cur_trial_type]
+            cur_resptime_end = resptime_FR_end[cur_trial_type]
+        else:
+            cur_resptime_start = resptime_FR_start
+            cur_resptime_end = resptime_FR_end
 
-        afterTrial_spoutOn = \
-            spout_key_times[
-                (spout_key_times['Spout_onset'].values >
-                 cur_trial['Trial_onset'] + cur_aftertrial_start) &
-                (spout_key_times['Spout_onset'].values <
-                 cur_trial['Trial_onset'] + cur_aftertrial_end)]['Spout_onset'].values
-        afterTrial_spoutOff = \
-            spout_key_times[
-                (spout_key_times['Spout_offset'].values >
-                 cur_trial['Trial_onset'] + cur_aftertrial_start) &
-                (spout_key_times['Spout_offset'].values <
-                 cur_trial['Trial_onset'] + cur_aftertrial_end)]['Spout_offset'].values
+        if type(beforeresp_FR_start) is dict:
+            cur_beforeresp_start = beforeresp_FR_start[cur_trial_type]
+            cur_beforeresp_end = beforeresp_FR_end[cur_trial_type]
+        else:
+            cur_beforeresp_start = beforeresp_FR_start
+            cur_beforeresp_end = beforeresp_FR_end
 
-        # Append to lists
-        nonAM_spoutOn_frequency_list.append(len(nonAM_spoutOn) / nonAM_duration_for_fr)
-        nonAM_spoutOff_frequency_list.append(len(nonAM_spoutOff) / nonAM_duration_for_fr)
-        trial_spoutOn_frequency_list.append(len(trial_spoutOn) / cur_stim_duration_for_fr_s)
-        trial_spoutOff_frequency_list.append(len(trial_spoutOff) / cur_stim_duration_for_fr_s)
-        afterTrial_spoutOn_frequency_list.append(len(afterTrial_spoutOn) / (cur_aftertrial_end - cur_aftertrial_start))
-        afterTrial_spoutOff_frequency_list.append(len(afterTrial_spoutOff) / (cur_aftertrial_end - cur_aftertrial_start))
+        # SPIKE TIMES
+        # Get spikes in the interval [trial_onset - pre_stim_raster; trial_onset + post_stim_raster]
+        spikes_around_trial = spike_times[
+            (spike_times >= cur_trial['Trial_onset'] + breakpoint_offset_time - pre_stim_raster) &
+            (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + post_stim_raster))]
 
-        # Spout events around AM trial [trial_onset - baseline_duration; trial_onset + stim_duration]
-        spoutOn_around_trial = \
-            spout_key_times[
-                (spout_key_times['Spout_onset'].values >
-                 cur_trial['Trial_onset'] - pre_stim_raster) &
-                (spout_key_times['Spout_onset'].values <
-                 cur_trial['Trial_onset'] + post_stim_raster)]['Spout_onset'].values
-        spoutOff_around_trial = \
-            spout_key_times[
-                (spout_key_times['Spout_offset'].values >
-                 cur_trial['Trial_onset'] - pre_stim_raster) &
-                (spout_key_times['Spout_offset'].values <
-                 cur_trial['Trial_onset'] + post_stim_raster)]['Spout_offset'].values
-        # zero-align to trial onset
-        spoutOn_around_trial -= (cur_trial['Trial_onset'])
-        spoutOff_around_trial -= (cur_trial['Trial_onset'])
+        # Zero center around trial onset
+        zerocentered_trial_spikes.append(spikes_around_trial - (cur_trial['Trial_onset'] + breakpoint_offset_time))
 
-        spoutOn_timestamps_list.append(spoutOn_around_trial)
-        spoutOff_timestamps_list.append(spoutOff_around_trial)
+        # Zero center around response time
+        if np.isnan(cur_resptime):
+            zerocentered_response_spikes.append([np.nan,])
+        else:
+            zerocentered_response_spikes.append(spikes_around_trial - (cur_trial['Trial_onset'] + cur_resptime + breakpoint_offset_time))
 
-        # Now get the spikes
         nonAM_spikes = spike_times[
             (previous_cr['Trial_onset'] + breakpoint_offset_time < spike_times) &
             (spike_times < previous_cr['Trial_onset'] + breakpoint_offset_time + nonAM_duration_for_fr)]
@@ -199,33 +159,37 @@ def get_fr_toTrials(memory_name,
                                    (spike_times < (cur_trial[
                                                        'Trial_onset'] + breakpoint_offset_time + cur_stim_duration_for_fr_s))]
 
-        afterTrial_spikes = spike_times[
-            (spike_times > cur_trial['Trial_onset'] + breakpoint_offset_time + cur_aftertrial_start) &
+        aftertrial_spikes = spike_times[
+            (spike_times > (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_aftertrial_start)) &
             (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_aftertrial_end))]
 
-        # Get spikes in the interval [trial_onset - pre_stim_raster; trial_onset + post_stim_raster]
-        spikes_around_trial = spike_times[
-            (spike_times >= cur_trial['Trial_onset'] + breakpoint_offset_time - pre_stim_raster) &
-            (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + post_stim_raster))]
+        resptime_spikes = spike_times[
+            (spike_times > (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime + cur_resptime_start)) &
+            (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime + cur_resptime_end))]
 
-        # Zero center around trial onset
-        spikes_around_trial -= (cur_trial['Trial_onset'] + breakpoint_offset_time)
-
-        timestamped_trial_spikes.append(spikes_around_trial)
+        beforeresp_spikes = spike_times[
+            (spike_times > (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime - cur_beforeresp_start)) &
+            (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime - cur_beforeresp_end))]
 
         # FR calculations
         cur_nonAM_FR = len(nonAM_spikes) / nonAM_duration_for_fr
         cur_trial_FR = len(trial_spikes) / cur_stim_duration_for_fr_s
-        cur_afterTrial_FR = len(afterTrial_spikes) / (cur_aftertrial_end - cur_aftertrial_start)
+        cur_aftertrial_fr = len(aftertrial_spikes) / (cur_aftertrial_end - cur_aftertrial_start)
+        cur_resptime_fr = len(resptime_spikes) / (cur_resptime_end - cur_resptime_start)
+        cur_beforeresp_fr = len(beforeresp_spikes) / (cur_beforeresp_start - cur_beforeresp_end)
 
         nonAM_FR_list.append(cur_nonAM_FR)
         trial_FR_list.append(cur_trial_FR)
-        afterTrial_FR_list.append(cur_afterTrial_FR)
+        aftertrial_FR_list.append(cur_aftertrial_fr)
+        resptime_FR_list.append(cur_resptime_fr)
+        beforeresp_FR_list.append(cur_beforeresp_fr)
 
         # Spike counts for eventual binomial glms
         nonAM_spikeCount_list.append(len(nonAM_spikes))
         trial_spikeCount_list.append(len(trial_spikes))
-        afterTrial_spikeCount_list.append(len(afterTrial_spikes))
+        aftertrial_spikeCount_list.append(len(aftertrial_spikes))
+        resptime_spikeCount_list.append(len(resptime_spikes))
+        beforeresp_spikeCount_list.append(len(beforeresp_spikes))
 
     if experiment_tag is None:
         csv_name = ''
@@ -243,20 +207,19 @@ def get_fr_toTrials(memory_name,
         if write_or_append_flag == 'w':
             writer.writerow(['Unit'] + ['Key_file'] + ['TrialID'] + ['AMdepth'] + ['Reminder'] + ['ShockFlag'] +
                             ['Hit'] + ['Miss'] + ['CR'] + ['FA'] + ['Period'] + ['Trial_onset'] + ['Trial_offset'] +
-                            ['FR_Hz'] + ['Spike_count'] + ['Spout_onsets_Hz'] + ['Spout_offsets_Hz']
+                            ['FR_Hz'] + ['Spike_count']
                             )
         for dummy_idx in range(0, len(nonAM_FR_list)):
             cur_row = relevant_key_times.iloc[dummy_idx, :]
 
-            for (trial_period, FR_list, spikeCount_list, spoutOn_frequency_list, spoutOff_frequency_list) in \
+            for (trial_period, FR_list, spikeCount_list) in \
                 zip(('Baseline', 'Trial', 'Aftertrial',
-                     'previous_Baseline', 'previous_Trial', 'previous_Aftertrial'),
-                    (nonAM_FR_list, trial_FR_list, afterTrial_FR_list),
-                    (nonAM_spikeCount_list, trial_spikeCount_list, afterTrial_spikeCount_list),
-                    (nonAM_spoutOn_frequency_list, trial_spoutOn_frequency_list, afterTrial_spoutOn_frequency_list,
-                     np.repeat(np.NaN, len(nonAM_FR_list)), np.repeat(np.NaN, len(nonAM_FR_list)), np.repeat(np.NaN, len(nonAM_FR_list))),
-                    (nonAM_spoutOff_frequency_list, trial_spoutOff_frequency_list, afterTrial_spoutOff_frequency_list,
-                     np.repeat(np.NaN, len(nonAM_FR_list)), np.repeat(np.NaN, len(nonAM_FR_list)), np.repeat(np.NaN, len(nonAM_FR_list)))):
+                     'RespTime', 'BeforeResp'),
+                    (nonAM_FR_list, trial_FR_list, aftertrial_FR_list,
+                     resptime_FR_list, beforeresp_FR_list),
+                    (nonAM_spikeCount_list, trial_spikeCount_list, aftertrial_spikeCount_list,
+                     resptime_spikeCount_list, beforeresp_spikeCount_list)
+                    ):
 
                 writer.writerow([unit_name] + [split(REGEX_SEP, key_path_info)[-1][:-4]] +
                                 [cur_row['TrialID']] + [round(cur_row['AMdepth'], 2)] + [cur_row['Reminder']] +
@@ -265,9 +228,7 @@ def get_fr_toTrials(memory_name,
                                 [cur_row['CR']] + [cur_row['FA']] +
                                 [trial_period] + [cur_row['Trial_onset']] + [cur_row['Trial_offset']] +
                                 [FR_list[dummy_idx]] +
-                                [spikeCount_list[dummy_idx]] +
-                                [spoutOn_frequency_list[dummy_idx]] +
-                                [spoutOff_frequency_list[dummy_idx]])
+                                [spikeCount_list[dummy_idx]])
 
     # Add all info to unitData
     trialInfo_filename = split(REGEX_SEP, key_path_info)[-1][:-4]
@@ -275,19 +236,17 @@ def get_fr_toTrials(memory_name,
         cur_unitData["Session"][trialInfo_filename][key_name] = relevant_key_times[key_name].values
 
     cur_unitData["Session"][trialInfo_filename]['AMdepth'] = np.round(relevant_key_times['AMdepth'].values, 2)
-
-    cur_unitData["Session"][trialInfo_filename]['Trial_spikes'] = timestamped_trial_spikes
+    cur_unitData["Session"][trialInfo_filename]['Trial_spikes'] = zerocentered_trial_spikes
+    cur_unitData["Session"][trialInfo_filename]['Response_spikes'] = zerocentered_response_spikes
     cur_unitData["Session"][trialInfo_filename]['Baseline_spikeCount'] = nonAM_spikeCount_list
     cur_unitData["Session"][trialInfo_filename]['Baseline_FR'] = nonAM_FR_list
     cur_unitData["Session"][trialInfo_filename]['Trial_spikeCount'] = trial_spikeCount_list
     cur_unitData["Session"][trialInfo_filename]['Trial_FR'] = trial_FR_list
-
-    cur_unitData["Session"][trialInfo_filename]['Baseline_spoutOn_frequency'] = nonAM_spoutOn_frequency_list
-    cur_unitData["Session"][trialInfo_filename]['Trial_spoutOn_frequency'] = trial_spoutOn_frequency_list
-    cur_unitData["Session"][trialInfo_filename]['Baseline_spoutOff_frequency'] = nonAM_spoutOff_frequency_list
-    cur_unitData["Session"][trialInfo_filename]['Trial_spoutOff_frequency'] = trial_spoutOff_frequency_list
-
-    cur_unitData["Session"][trialInfo_filename]['SpoutOn_times_during_trial'] = spoutOn_timestamps_list
-    cur_unitData["Session"][trialInfo_filename]['SpoutOff_times_during_trial'] = spoutOff_timestamps_list
+    cur_unitData["Session"][trialInfo_filename]['Aftertrial_spikeCount'] = aftertrial_spikeCount_list
+    cur_unitData["Session"][trialInfo_filename]['Aftertrial_FR'] = aftertrial_FR_list
+    cur_unitData["Session"][trialInfo_filename]['ResponseTime_spikeCount'] = resptime_spikeCount_list
+    cur_unitData["Session"][trialInfo_filename]['ResponseTime_FR'] = resptime_FR_list
+    cur_unitData["Session"][trialInfo_filename]['BeforeResponse_spikeCount'] = beforeresp_spikeCount_list
+    cur_unitData["Session"][trialInfo_filename]['BeforeResponse_FR'] = beforeresp_FR_list
 
     return cur_unitData

@@ -25,11 +25,10 @@ def __common_psth_engine(spike_times,
                          key_times=None,
                          ax_raster=None, ax_psth=None, ax_gaussian=None,
                          breakpoint_offset=None,
-                         hist_bin_size_ms=10,
+                         hist_bin_size=0.01,
                          do_plot=True,
                          rasterize=True):
-    bin_size = hist_bin_size_ms / 1000  # in s
-    bin_cuts = np.arange(-pre_stimulus_raster, post_stimulus_raster + bin_size, bin_size)
+    bin_cuts = np.arange(-pre_stimulus_raster, post_stimulus_raster + hist_bin_size, hist_bin_size)
 
     # raster_trial_counter = 0
     if key_times is not None:
@@ -79,10 +78,10 @@ def __common_psth_engine(spike_times,
     hist, edges = np.histogram(flat_relative_times, bins=bin_cuts)
 
     # Change hist to spike rate before appending
-    hist = np.round(hist / number_of_stimulus_repetitions / bin_size, 2)
+    hist = np.round(hist / number_of_stimulus_repetitions / hist_bin_size, 2)
 
     if do_plot:
-        ax_psth.bar(bin_cuts[:-1], hist, bin_size, color='k', align='edge')
+        ax_psth.bar(bin_cuts[:-1], hist, color='k', edgecolor='k', align='edge', width=hist_bin_size)
 
     return hist
 
@@ -101,7 +100,7 @@ def __plot_aligned_spikes(aligned_spikes, pre_stimulus_raster, post_stimulus_ras
                          pre_stimulus_raster=pre_stimulus_raster,
                          post_stimulus_raster=post_stimulus_raster,
                          ax_psth=ax_psth, ax_raster=ax_raster,
-                         hist_bin_size_ms=psth_bin_size,
+                         hist_bin_size=psth_bin_size,
                          do_plot=True)
 
     # Format axs
@@ -127,137 +126,42 @@ def __plot_aligned_spikes(aligned_spikes, pre_stimulus_raster, post_stimulus_ras
 def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                      post_stimulus_raster, psth_fixed_ylim, raster_ylim, trial_types, align_to_response,
                      shock_artifact):
-    with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(psth_bin_size) + 'ms.pdf'])) as pdf:
+    with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(int(psth_bin_size*1000)) + 'ms.pdf'])) as pdf:
         for session in cur_data.keys():
             if session == 'active':
                 for trial_type in trial_types:
-                    spike_times = []
                     if trial_type == 'Hit (shock)':
                         cur_trial_mask = np.all(
                             [np.array(cur_data[session]['Hit']) == 1,
                              np.array(cur_data[session]['ShockFlag']) == 1,
                              np.array(cur_data[session]['Reminder']) == 0],
                             axis=0)
-                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
-                                       cur_trial_mask[x_idx]]
 
-                        if align_to_response:
-                            spout_offsets = [x for x_idx, x in
-                                             enumerate(cur_data[session]['SpoutOff_times_during_trial']) if
-                                             cur_trial_mask[x_idx]]
-                            # Find spout offset that triggered Hit
-                            spoutOffset_triggers = [np.array(t) for t in spout_offsets]
-                            # Very rarely, it doesn't register one, so skip that trial
-                            valid_spoutOffset_triggers = list()
-                            valid_trial_idx = list()
-                            for dummy_idx, trial_triggers in enumerate(spoutOffset_triggers):
-                                trigger_values = trial_triggers[(trial_triggers > 0) & (trial_triggers < 1)]
-                                if len(trigger_values) > 0:
-                                    valid_trial_idx.append(dummy_idx)
-                                    valid_spoutOffset_triggers.append(trigger_values[-1])
-
-                            spike_times = [x for dummy_idx, x in enumerate(spike_times) if dummy_idx in valid_trial_idx]
-                            spoutOffset_triggers = np.array(valid_spoutOffset_triggers)
-
-                            # Zero-center spikes around those events
-                            for trial_idx, spoutOffset_trigger in enumerate(spoutOffset_triggers):
-                                spike_times.append(spike_times[trial_idx] - spoutOffset_trigger)
                     elif trial_type == 'Hit (no shock)':
                         cur_trial_mask = np.all(
                             [np.array(cur_data[session]['Hit']) == 1,
                              np.array(cur_data[session]['ShockFlag']) == 0,
                              np.array(cur_data[session]['Reminder']) == 0],
                             axis=0)
-                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
-                                       cur_trial_mask[x_idx]]
-
-                        if align_to_response:
-                            spout_offsets = [x for x_idx, x in
-                                             enumerate(cur_data[session]['SpoutOff_times_during_trial']) if
-                                             cur_trial_mask[x_idx]]
-                            # Find spout offset that triggered Hit
-                            spoutOffset_triggers = [np.array(t) for t in spout_offsets]
-                            # Very rarely, it doesn't register one, so skip that trial
-                            valid_spoutOffset_triggers = list()
-                            valid_trial_idx = list()
-                            for dummy_idx, trial_triggers in enumerate(spoutOffset_triggers):
-                                trigger_values = trial_triggers[(trial_triggers > 0) & (trial_triggers < 1)]
-                                if len(trigger_values) > 0:
-                                    valid_trial_idx.append(dummy_idx)
-                                    valid_spoutOffset_triggers.append(trigger_values[-1])
-
-                            spike_times = [x for dummy_idx, x in enumerate(spike_times) if dummy_idx in valid_trial_idx]
-                            spoutOffset_triggers = np.array(valid_spoutOffset_triggers)
-
-                            # Zero-center spikes around those events
-                            for trial_idx, spoutOffset_trigger in enumerate(spoutOffset_triggers):
-                                spike_times.append(spike_times[trial_idx] - spoutOffset_trigger)
 
                     elif trial_type == 'False alarm':
                         cur_trial_mask = np.all([np.array(cur_data[session]['FA']) == 1,
                                                  np.array(cur_data[session]['Reminder']) == 0], axis=0)
-                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
-                                       cur_trial_mask[x_idx]]
-                        if align_to_response:
-                            spout_offsets = [x for x_idx, x in
-                                             enumerate(cur_data[session]['SpoutOff_times_during_trial']) if
-                                             cur_trial_mask[x_idx]]
-                            # Find spout offset that triggered FA
-                            spoutOffset_triggers = [np.array(t) for t in spout_offsets]
-                            # Very rarely, it doesn't register one, so skip that trial
-                            valid_spoutOffset_triggers = list()
-                            valid_trial_idx = list()
-                            for dummy_idx, trial_triggers in enumerate(spoutOffset_triggers):
-                                trigger_values = trial_triggers[(trial_triggers > 0) & (trial_triggers < 1)]
-                                if len(trigger_values) > 0:
-                                    valid_trial_idx.append(dummy_idx)
-                                    valid_spoutOffset_triggers.append(trigger_values[-1])
-
-                            spike_times = [x for dummy_idx, x in enumerate(spike_times) if dummy_idx in valid_trial_idx]
-                            spoutOffset_triggers = np.array(valid_spoutOffset_triggers)
-                            # Zero-center spikes around those events
-                            for trial_idx, spoutOffset_trigger in enumerate(spoutOffset_triggers):
-                                spike_times.append(spike_times[trial_idx] - spoutOffset_trigger)
 
                     elif trial_type == 'Miss (shock)':
                         cur_trial_mask = np.all([np.array(cur_data[session]['Miss']) == 1,
                                                  np.array(cur_data[session]['ShockFlag']) == 1,
                                                  np.array(cur_data[session]['Reminder']) == 0], axis=0)
-                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
-                                       cur_trial_mask[x_idx]]
-                        if align_to_response:
-                            spout_offsets = [x for x_idx, x in
-                                             enumerate(cur_data[session]['SpoutOff_times_during_trial']) if
-                                             cur_trial_mask[x_idx]]
-
-                            # Find first spout offset during shock period
-                            spoutOffset_triggers = [np.array(t) for t in spout_offsets]
-                            # Animal may not leave the spout...
-                            valid_spoutOffset_triggers = list()
-                            valid_trial_idx = list()
-                            for dummy_idx, trial_triggers in enumerate(spoutOffset_triggers):
-
-                                trigger_values = trial_triggers[
-                                    (trial_triggers > shock_artifact[0]) & (trial_triggers < shock_artifact[1] + 0.2)]
-                                if len(trigger_values) > 0:
-                                    valid_trial_idx.append(dummy_idx)
-                                    valid_spoutOffset_triggers.append(trigger_values[-1])
-
-                            spike_times = [x for dummy_idx, x in enumerate(spike_times) if dummy_idx in valid_trial_idx]
-                            spoutOffset_triggers = np.array(valid_spoutOffset_triggers)
-                            # Zero-center spikes around those events
-                            for trial_idx, spoutOffset_trigger in enumerate(spoutOffset_triggers):
-                                spike_times.append(spike_times[trial_idx] - spoutOffset_trigger)
-
-                    elif trial_type == 'Miss (no shock)':
-                        cur_trial_mask = np.all([np.array(cur_data[session]['Miss']) == 1,
-                                                 np.array(cur_data[session]['ShockFlag']) == 0,
-                                                 np.array(cur_data[session]['Reminder']) == 0], axis=0)
-                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
-                                       cur_trial_mask[x_idx]]
 
                     else:  # passive trials are handled in the scope above this loop
                         continue
+
+                    if not align_to_response:
+                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
+                                       cur_trial_mask[x_idx]]
+                    else:
+                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Response_spikes']) if
+                                       cur_trial_mask[x_idx]]
 
                     plot_suptitle = unit_name + "\n" + session + '\n' + trial_type
                     __plot_aligned_spikes(spike_times, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
@@ -304,7 +208,7 @@ def run_PSTH_pipeline(input_list):
     raster_ylim = SETTINGS_DICT['PSTH_RASTER_YLIM']
     trial_types = SETTINGS_DICT['PSTH_TRIALTYPES']
     align_to_response = SETTINGS_DICT['PSTH_ALIGN_TO_RESPONSE']
-    shock_artifact = SETTINGS_DICT['SHOCK_ARTIFACT']
+    shock_artifact = SETTINGS_DICT['SHOCK_START_END']
     pipeline_switchboard = SETTINGS_DICT['PIPELINE_SWITCHBOARD']
 
     # Set plotting parameters

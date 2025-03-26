@@ -1,6 +1,7 @@
 from os import makedirs
 from os.path import sep
 import platform
+import warnings
 
 from re import split
 
@@ -80,7 +81,7 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
         try:
             cur_data = data_dict[unit]['pre']
 
-            response_curve = np.array(cur_data['AMTrial_auroc'])
+            response_curve = np.array(cur_data['TrialAligned_GO_auroc'])  # This is the only relevant subfield
 
             # Fill no responses with NaNs
             if len(response_curve) == 0 or np.mean(response_curve) == 0:
@@ -88,18 +89,19 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
 
             auroc_list.append(response_curve)
             unit_list.append(unit)
-            trialType_list.append('PassivePre')
+            trialType_list.append('TrialAligned_PassivePre_auroc')
         except KeyError:
+            warnings.warn('Could not find PassivePre data for {}.'.format(unit))
             response_curve = np.NaN
             auroc_list.append(response_curve)
             unit_list.append(unit)
-            trialType_list.append('PassivePre')
+            trialType_list.append('TrialAligned_PassivePre_auroc')
 
         # Post data
         try:
             cur_data = data_dict[unit]['post']
 
-            response_curve = np.array(cur_data['AMTrial_auroc'])
+            response_curve = np.array(cur_data['TrialAligned_GO_auroc'])
 
             # Fill no responses with NaNs
             if len(response_curve) == 0 or np.mean(response_curve) == 0:
@@ -107,19 +109,21 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
 
             auroc_list.append(response_curve)
             unit_list.append(unit)
-            trialType_list.append('PassivePost')
+            trialType_list.append('TrialAligned_PassivePost_auroc')
         except KeyError:
+            warnings.warn('Could not find PassivePost data for {}.'.format(unit))
             response_curve = np.NaN
             auroc_list.append(response_curve)
             unit_list.append(unit)
-            trialType_list.append('PassivePost')
+            trialType_list.append('TrialAligned_PassivePost_auroc')
 
         # Active data
         try:
             cur_data = data_dict[unit]['active']
 
             for trial_type in list(trial_types.keys()):
-                if 'Passive' in trial_type:  # Just in case
+                if 'Passive' in trial_type:  # Just in case there was some mislabelling along the way
+
                     continue
                 response_curve = np.array(cur_data[trial_type])
 
@@ -133,15 +137,18 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
         except KeyError:
             for trial_type in list(trial_types.keys()):
                 if 'Passive' in trial_type:  # Just in case
+                    warnings.warn('Active trial mislabeled as Passive for {}.'.format(unit))
                     continue
-                response_curve = np.NaN
-                auroc_list.append(response_curve)
-                unit_list.append(unit)
-                trialType_list.append(trial_type)
+                else:
+                    warnings.warn('Could not find Active data for {}.'.format(unit))
+                    response_curve = np.NaN
+                    auroc_list.append(response_curve)
+                    unit_list.append(unit)
+                    trialType_list.append(trial_type)
 
     # Fill NaNs to match array dimensions
-    auroc_len = np.round(np.mean([len(x) for x in auroc_list if not np.alltrue(np.isnan(x))]), 0)
-    plot_list = [np.full(int(auroc_len), np.nan) if np.alltrue(np.isnan(x)) else x for x in auroc_list]
+    auroc_len = np.round(np.mean([len(x) for x in auroc_list if not np.all(np.isnan(x))]), 0)
+    plot_list = [np.full(int(auroc_len), np.nan) if np.all(np.isnan(x)) else x for x in auroc_list]
     plot_list = np.array(plot_list)
 
     # Plot
