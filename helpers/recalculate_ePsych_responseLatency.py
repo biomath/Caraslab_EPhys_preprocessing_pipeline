@@ -1,9 +1,8 @@
 from glob import glob
 from datetime import datetime
 import numpy as np
-from re import split
+from re import split, search
 from os.path import sep
-from os import makedirs
 import platform
 from helpers.preprocess_files import preprocess_files
 from pandas import read_csv
@@ -29,8 +28,8 @@ def recalculate_ePsych_responseLatency(input_list):
 
     # Load globals
     shock_start_end = SETTINGS_DICT['SHOCK_START_END']
-
     output_path = SETTINGS_DICT['KEYS_PATH']
+    key_paths_spout = glob(SETTINGS_DICT['KEYS_PATH'] + sep + "*spoutTimestamps.csv")
     save_dir = output_path
 
     # save_dir = output_path + sep + 'new_respLatencies'
@@ -41,29 +40,35 @@ def recalculate_ePsych_responseLatency(input_list):
         if 'Passive' in recording_path:
             continue
 
-        # Split path name to get subject, session and unit ID for prettier output
-        split_filename = split('_*_', split(REGEX_SEP, recording_path)[3])  # split path
-        cur_date = split('-*-', split_filename[1])[3]
-        subject_id = split_filename[0]
+        split_key_path = split(REGEX_SEP, recording_path)[-1]  # split path
+        subject_id = split('_*_', split_key_path)[0]
+        recording_type = SETTINGS_DICT['RECORDING_TYPE_DICT'][subject_id]
 
-        # Use subj-session identifier to grab appropriate key
-        # Stimulus info is in trialInfo
+        # Split path name to get corresponding spout file
+        synapse_key_finder_index = 1  # MML-Aversive-AM-210501-112033 after splitting at "_"
+        intan_key_finder_index = [1, 2, 3]  # 2021-07-17, 15-19-28, Active after splitting at "_"
 
-        # These are in alphabetical order. Must sort by date_trial or match with file
-        # Match by name for now for breakpoints
-        key_paths_spout = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*Aversive*' +
-                               cur_date + "*spoutTimestamps.csv")
+        if recording_type == 'synapse':
+            key_finder = split(REGEX_SEP, recording_path)[-1]
+            key_finder = split("_*_", key_finder)[synapse_key_finder_index]
+        else:
+            key_finder = split(REGEX_SEP, recording_path)[-1]
+            key_finder = split("_*_", key_finder)
+            key_finder = '_'.join([key_finder[x] for x in intan_key_finder_index])
 
-        if len(key_paths_spout) == 0:
-            # Maybe the key file wasn't found because date is in Intan format
-            # Convert date to ePsych format
-            cur_date = datetime.strptime(cur_date, '%y%m%d')
-            cur_date = datetime.strftime(cur_date, '%y-%m-%d')
-            key_paths_spout = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
-                                   cur_date + "*_spoutTimestamps.csv")
+            # This is able to handle the extra SUBJ field before the key identifier in some intan recordings.
+            if 'Passive' not in key_finder and 'Active' not in key_finder and 'Aversive' not in key_finder and 'Exctinction' not in key_finder:
+                key_finder = split(REGEX_SEP, recording_path)[-1]
+                key_finder = split("_*_", key_finder)
+                key_finder = '_'.join([key_finder[x + 1] for x in intan_key_finder_index])
+
+        key_path_spout_finder = [search(key_finder, file_name) for file_name in key_paths_spout]
+
+        key_path_spout_finder = [i for i, x in enumerate(key_path_spout_finder) if x is not None][0]
+        key_path_spout = key_paths_spout[key_path_spout_finder]
 
         info_key_times = read_csv(recording_path)
-        spout_key_times = read_csv(key_paths_spout[0])
+        spout_key_times = read_csv(key_path_spout)
 
         try:
             spout_offsets = spout_key_times['Spout_offset'].values
