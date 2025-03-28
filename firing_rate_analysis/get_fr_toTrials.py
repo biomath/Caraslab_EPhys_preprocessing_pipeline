@@ -32,7 +32,7 @@ def get_fr_toTrials(memory_name,
                     resptime_FR_start: dict or int=0.3,  # For calculating after-response firing rate
                     resptime_FR_end: dict or int=1.8,
                     beforeresp_FR_start: dict or int=0.5,  # For calculating pre-response firing rate (will be converted to negative)
-                    beforeresp_FR_end: dict or int=0,
+                    beforeresp_FR_end: dict or int=0
                     ):
     """
     Process spike data around trials
@@ -43,13 +43,6 @@ def get_fr_toTrials(memory_name,
     """
     # Load key files
     info_key_times = read_csv(key_path_info)
-
-    # Load spout file if it exists
-    try:
-        spout_key_times = read_csv(key_path_spout)
-    except ValueError:
-        spout_key_times = {'Spout_onset': [], 'Spout_offset': []}
-        spout_key_times = pd.DataFrame(spout_key_times)
 
     # Load spike times
     spike_times = np.genfromtxt(memory_name)

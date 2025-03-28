@@ -30,12 +30,19 @@ def run_pipeline(input_list):
     output_path = SETTINGS_DICT['OUTPUT_PATH']
 
     experiment_tag = SETTINGS_DICT['EXPERIMENT_TAG']
+
+    # FR calculation windows
     nonAM_duration_for_fr = SETTINGS_DICT['NONAM_DURATION_FOR_FR']
     trial_duration_for_fr = SETTINGS_DICT['TRIAL_DURATION_FOR_FR']
+    aftertrial_FR_start = SETTINGS_DICT['AFTERTRIAL_FR_START']
+    aftertrial_FR_end = SETTINGS_DICT['AFTERTRIAL_FR_END']
+    resptime_FR_start = SETTINGS_DICT['RESPTIME_FR_START']
+    resptime_FR_end = SETTINGS_DICT['RESPTIME_FR_END']
+    beforeresp_FR_start = SETTINGS_DICT['BEFORERESP_FR_START']
+    beforeresp_FR_end = SETTINGS_DICT['BEFORERESP_FR_END']
+
     pretrial_duration_for_spiketimes = SETTINGS_DICT['PRETRIAL_DURATION_FOR_SPIKETIMES']
     posttrial_duration_for_spiketimes = SETTINGS_DICT['POSTTRIAL_DURATION_FOR_SPIKETIMES']
-    afterTrial_FR_start = SETTINGS_DICT['AFTERTRIAL_FR_START']
-    afterTrial_FR_end = SETTINGS_DICT['AFTERTRIAL_FR_END']
 
     psth_bin_size = SETTINGS_DICT['PSTH_BIN_SIZE']
     auroc_bin_size = SETTINGS_DICT['AUROC_BIN_SIZE']
@@ -76,7 +83,10 @@ def run_pipeline(input_list):
                                            trial_duration_for_fr=trial_duration_for_fr,
                                            pre_stim_raster=pretrial_duration_for_spiketimes,
                                            post_stim_raster=posttrial_duration_for_spiketimes,
-                                           aftertrial_FR_start=afterTrial_FR_start, aftertrial_FR_end=afterTrial_FR_end)
+                                           aftertrial_FR_start=aftertrial_FR_start, aftertrial_FR_end=aftertrial_FR_end,
+                                           resptime_FR_start=resptime_FR_start, resptime_FR_end=resptime_FR_end,
+                                           beforeresp_FR_start=beforeresp_FR_start, beforeresp_FR_end=beforeresp_FR_end
+                                           )
             write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         '''
