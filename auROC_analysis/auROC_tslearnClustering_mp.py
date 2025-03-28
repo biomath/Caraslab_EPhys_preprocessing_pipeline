@@ -1,17 +1,14 @@
 from os import remove, makedirs
 from os.path import sep
 import platform
-import json
 from time import time
 from glob import glob
-from multiprocessing import Pool, cpu_count, current_process
+from multiprocessing import Pool, current_process
 from numba import cuda
-from pathlib import Path
 
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
-from scipy.signal import resample
 from tslearn.clustering import TimeSeriesKMeans
 import pandas as pd
 import seaborn as sns
@@ -383,9 +380,6 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
         clustering_time_start = run_dict[cur_col][0]
         clustering_time_end = run_dict[cur_col][1]
         file_pre_name = cur_col + '_' + str(clustering_time_start) + 's-' + str(clustering_time_end) + 's'
-        # I opted to start clustering spout events a little earlier
-        # if cur_col in ('allSpoutOnset_auroc', 'allSpoutOffset_auroc'):
-        #     clustering_time_start = -1
 
         relevant_indices = np.arange((clustering_time_start + pretrial_duration_for_spiketimes) /
                                      binsize, (clustering_time_end + pretrial_duration_for_spiketimes) / binsize)
@@ -466,9 +460,9 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
             g.ax_heatmap.axvline(x=(clustering_time_end + pretrial_duration_for_spiketimes) / binsize,
                                  color='lightcyan', linestyle='--')
 
-            # Trim a bit of the SpoutOff data because the offset to get the spout off event sometimes goes beyond
+            # Trim a bit of the ResponseAligned data because the offset to get the spout off event sometimes goes beyond
             # what I used to calculate the auROC so we end up with blank spaces at the end
-            if 'SpoutOff' in cur_col:
+            if 'ResponseAligned' in cur_col:
                 g.ax_heatmap.set_xlim(
                     [0, (posttrial_duration_for_spiketimes + pretrial_duration_for_spiketimes - 1) / binsize])
 
@@ -504,9 +498,9 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
             elif 'psth' in cur_col:
                 g.ax.set_ylabel('Spikes/s')
 
-            # Trim a bit of the SpoutOff data heatmap because the offset to get the spout off event sometimes goes beyond
+            # Trim a bit of the ResponseAligned data heatmap because the offset to get the spout off event sometimes goes beyond
             # what I used to calculate the auROC so we end up with blank spaces at the end
-            if 'SpoutOff' in cur_col:
+            if 'ResponseAligned' in cur_col:
                 g.ax.set_xlim([-pretrial_duration_for_spiketimes, posttrial_duration_for_spiketimes - 1])
 
             sns.despine()

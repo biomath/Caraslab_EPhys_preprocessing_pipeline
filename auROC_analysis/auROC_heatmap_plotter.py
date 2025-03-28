@@ -85,14 +85,14 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
 
             # Fill no responses with NaNs
             if len(response_curve) == 0 or np.mean(response_curve) == 0:
-                response_curve = np.NaN
+                response_curve = np.nan
 
             auroc_list.append(response_curve)
             unit_list.append(unit)
             trialType_list.append('TrialAligned_PassivePre_auroc')
         except KeyError:
             warnings.warn('Could not find PassivePre data for {}.'.format(unit))
-            response_curve = np.NaN
+            response_curve = np.nan
             auroc_list.append(response_curve)
             unit_list.append(unit)
             trialType_list.append('TrialAligned_PassivePre_auroc')
@@ -105,14 +105,14 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
 
             # Fill no responses with NaNs
             if len(response_curve) == 0 or np.mean(response_curve) == 0:
-                response_curve = np.NaN
+                response_curve = np.nan
 
             auroc_list.append(response_curve)
             unit_list.append(unit)
             trialType_list.append('TrialAligned_PassivePost_auroc')
         except KeyError:
             warnings.warn('Could not find PassivePost data for {}.'.format(unit))
-            response_curve = np.NaN
+            response_curve = np.nan
             auroc_list.append(response_curve)
             unit_list.append(unit)
             trialType_list.append('TrialAligned_PassivePost_auroc')
@@ -129,7 +129,7 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
 
                 # Fill no responses with NaNs
                 if len(response_curve) == 0 or np.mean(response_curve) == 0:
-                    response_curve = np.NaN
+                    response_curve = np.nan
 
                 auroc_list.append(response_curve)
                 unit_list.append(unit)
@@ -141,7 +141,7 @@ def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
                     continue
                 else:
                     warnings.warn('Could not find Active data for {}.'.format(unit))
-                    response_curve = np.NaN
+                    response_curve = np.nan
                     auroc_list.append(response_curve)
                     unit_list.append(unit)
                     trialType_list.append(trial_type)

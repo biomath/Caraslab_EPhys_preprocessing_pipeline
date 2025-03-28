@@ -1,10 +1,8 @@
 from glob import glob
-from datetime import datetime
 import numpy as np
 from re import split, search
 from os.path import sep
 import platform
-from helpers.preprocess_files import preprocess_files
 from pandas import read_csv
 
 # Tweak the regex file separator for cross-platform compatibility
@@ -44,7 +42,7 @@ def recalculate_ePsych_responseLatency(input_list):
         subject_id = split('_*_', split_key_path)[0]
         recording_type = SETTINGS_DICT['RECORDING_TYPE_DICT'][subject_id]
 
-        # Split path name to get corresponding spout file
+        # Split path name to get subject, session and unit ID for prettier output
         synapse_key_finder_index = 1  # MML-Aversive-AM-210501-112033 after splitting at "_"
         intan_key_finder_index = [1, 2, 3]  # 2021-07-17, 15-19-28, Active after splitting at "_"
 
