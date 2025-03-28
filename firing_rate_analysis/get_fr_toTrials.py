@@ -23,16 +23,18 @@ def get_fr_toTrials(memory_name,
                     experiment_tag=None,
                     first_cell_flag=True,
                     breakpoint_offset=0,
-                    nonAM_duration_for_fr: dict or int=0.5,
-                    trial_duration_for_fr: dict or int=0.5,
+                    nonAM_duration_for_fr: dict or int = 0.5,
+                    trial_duration_for_fr: dict or int = 0.5,
                     pre_stim_raster=2.,  # For timestamped spikeTimes
                     post_stim_raster=4.,  # For timestamped spikeTimes
-                    aftertrial_FR_start: dict or int=1.3,  # For calculating after-stimulus firing rate; useful for Misses
-                    aftertrial_FR_end: dict or int=2,
-                    resptime_FR_start: dict or int=0.3,  # For calculating after-response firing rate
-                    resptime_FR_end: dict or int=1.8,
-                    beforeresp_FR_start: dict or int=0.5,  # For calculating pre-response firing rate (will be converted to negative)
-                    beforeresp_FR_end: dict or int=0
+                    aftertrial_FR_start: dict or int = 1.3,
+                    # For calculating after-stimulus firing rate; useful for Misses
+                    aftertrial_FR_end: dict or int = 2,
+                    resptime_FR_start: dict or int = 0.3,  # For calculating after-response firing rate
+                    resptime_FR_end: dict or int = 1.8,
+                    beforeresp_FR_start: dict or int = 0.5,
+                    # For calculating pre-response firing rate (will be converted to negative)
+                    beforeresp_FR_end: dict or int = 0
                     ):
     """
     Process spike data around trials
@@ -140,9 +142,10 @@ def get_fr_toTrials(memory_name,
 
         # Zero center around response time
         if np.isnan(cur_resptime):
-            zerocentered_response_spikes.append([np.nan,])
+            zerocentered_response_spikes.append([np.nan, ])
         else:
-            zerocentered_response_spikes.append(spikes_around_trial - (cur_trial['Trial_onset'] + cur_resptime + breakpoint_offset_time))
+            zerocentered_response_spikes.append(
+                spikes_around_trial - (cur_trial['Trial_onset'] + cur_resptime + breakpoint_offset_time))
 
         nonAM_spikes = spike_times[
             (previous_cr['Trial_onset'] + breakpoint_offset_time < spike_times) &
@@ -206,14 +209,13 @@ def get_fr_toTrials(memory_name,
             cur_row = relevant_key_times.iloc[dummy_idx, :]
 
             for (trial_period, FR_list, spikeCount_list) in \
-                zip(('Baseline', 'Trial', 'Aftertrial',
-                     'RespTime', 'BeforeResp'),
-                    (nonAM_FR_list, trial_FR_list, aftertrial_FR_list,
-                     resptime_FR_list, beforeresp_FR_list),
-                    (nonAM_spikeCount_list, trial_spikeCount_list, aftertrial_spikeCount_list,
-                     resptime_spikeCount_list, beforeresp_spikeCount_list)
-                    ):
-
+                    zip(('Baseline', 'Trial', 'Aftertrial',
+                         'RespTime', 'BeforeResp'),
+                        (nonAM_FR_list, trial_FR_list, aftertrial_FR_list,
+                         resptime_FR_list, beforeresp_FR_list),
+                        (nonAM_spikeCount_list, trial_spikeCount_list, aftertrial_spikeCount_list,
+                         resptime_spikeCount_list, beforeresp_spikeCount_list)
+                        ):
                 writer.writerow([unit_name] + [split(REGEX_SEP, key_path_info)[-1][:-4]] +
                                 [cur_row['TrialID']] + [round(cur_row['AMdepth'], 2)] + [cur_row['Reminder']] +
                                 [cur_row['ShockFlag']] +
