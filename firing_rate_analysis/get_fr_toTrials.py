@@ -207,7 +207,7 @@ def get_fr_toTrials(memory_name,
         if write_or_append_flag == 'w':
             writer.writerow(['Unit'] + ['Key_file'] + ['TrialID'] + ['AMdepth'] + ['Reminder'] + ['ShockFlag'] +
                             ['Hit'] + ['Miss'] + ['CR'] + ['FA'] + ['Period'] + ['Trial_onset'] + ['Trial_offset'] +
-                            ['FR_Hz'] + ['Spike_count']
+                            ['RespLatency'] + ['FR_Hz'] + ['Spike_count']
                             )
         for dummy_idx in range(0, len(nonAM_FR_list)):
             cur_row = relevant_key_times.iloc[dummy_idx, :]
@@ -227,12 +227,14 @@ def get_fr_toTrials(memory_name,
                                 [cur_row['Hit']] + [cur_row['Miss']] +
                                 [cur_row['CR']] + [cur_row['FA']] +
                                 [trial_period] + [cur_row['Trial_onset']] + [cur_row['Trial_offset']] +
+                                [cur_row['RespLatency']] +
                                 [FR_list[dummy_idx]] +
                                 [spikeCount_list[dummy_idx]])
 
     # Add all info to unitData
     trialInfo_filename = split(REGEX_SEP, key_path_info)[-1][:-4]
-    for key_name in ('TrialID', 'Reminder', 'ShockFlag', 'Hit', 'Miss', 'CR', 'FA', 'Trial_onset', 'Trial_offset'):
+    for key_name in ('TrialID', 'Reminder', 'ShockFlag', 'Hit', 'Miss', 'CR', 'FA',
+                     'Trial_onset', 'Trial_offset', 'RespLatency'):
         cur_unitData["Session"][trialInfo_filename][key_name] = relevant_key_times[key_name].values
 
     cur_unitData["Session"][trialInfo_filename]['AMdepth'] = np.round(relevant_key_times['AMdepth'].values, 2)
