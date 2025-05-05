@@ -7,6 +7,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
 from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib
+matplotlib.use('agg')  # Required to avoid known memory leak caused by matplotlib with Jupyter
+from gc import collect
 
 from helpers.format_axes import format_ax
 
@@ -120,7 +123,8 @@ def __plot_aligned_spikes(aligned_spikes, pre_stimulus_raster, post_stimulus_ras
 
     pdf_handle.savefig()
 
-    plt.close()
+    plt.clf()
+    plt.close("all")
 
 
 def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
@@ -166,6 +170,7 @@ def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_s
                     plot_suptitle = unit_name + "\n" + session + '\n' + trial_type
                     __plot_aligned_spikes(spike_times, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
                                           psth_fixed_ylim, raster_ylim, plot_suptitle, pdf)
+                    collect()
             else:
                 # Assume passive
                 trial_type = 'passive'
@@ -173,6 +178,7 @@ def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_s
                 plot_suptitle = unit_name + "\n" + session + '\n' + trial_type
                 __plot_aligned_spikes(spike_times, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
                                       psth_fixed_ylim, raster_ylim, plot_suptitle, pdf)
+                collect()
 
 
 def __amDepth_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
@@ -196,6 +202,7 @@ def __amDepth_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_sti
                 plot_suptitle = unit_name + "\n" + session + '\n' + str(amdepth_log) + ' dB re:100%'
                 __plot_aligned_spikes(spike_times, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
                                       psth_fixed_ylim, raster_ylim, plot_suptitle, pdf)
+                collect()
 
 
 def run_PSTH_pipeline(input_list):

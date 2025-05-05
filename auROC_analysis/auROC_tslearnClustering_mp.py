@@ -343,7 +343,7 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                         cur_data = data_dict[unit]['post']
                     else:
                         continue
-                    response_curve = np.array(cur_data['AMTrial_auroc'])
+                    response_curve = np.array(cur_data['TrialAligned_GO_auroc'])
                 else:
                     # Active data, thus trial type is relevant
                     cur_data = data_dict[unit]['active']

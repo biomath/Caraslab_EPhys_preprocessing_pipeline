@@ -93,7 +93,7 @@ def find_spoutfile_and_breakpoint(subject_id, key_path_info, key_paths_spout, cu
         key_finder = '_'.join([key_finder[x] for x in intan_key_finder_index])
 
         # This is able to handle the extra SUBJ field before the key identifier in some intan recordings.
-        if 'Passive' not in key_finder and 'Active' not in key_finder and 'Aversive' not in key_finder and 'Exctinction' not in key_finder:
+        if 'Passive' not in key_finder and 'Active' not in key_finder and 'Aversive' not in key_finder and 'Extinction' not in key_finder:
             key_finder = split(REGEX_SEP, key_path_info)[-1]
             key_finder = split("_*_", key_finder)
             key_finder = '_'.join([key_finder[x+1] for x in intan_key_finder_index])
@@ -106,13 +106,17 @@ def find_spoutfile_and_breakpoint(subject_id, key_path_info, key_paths_spout, cu
     except IndexError:
         key_path_spout = None
 
-    # Find appropriate breakpoint for file
-    breakpoint_offset_idx = cur_breakpoint_df.index[
-        cur_breakpoint_df['Session_file'].str.contains(key_finder)]
+    # Find appropriate breakpoint for file if it exists
+    try:
+        breakpoint_offset_idx = cur_breakpoint_df.index[
+            cur_breakpoint_df['Session_file'].str.contains(key_finder)]
+    except KeyError:
+        breakpoint_offset_idx = 0
+
+    # also grab previous session's breakpoint if it exists
     try:
         breakpoint_offset = cur_breakpoint_df.loc[
-            breakpoint_offset_idx - 1, 'Break_point_seconds'].values[0]  # grab previous session's breakpoint
-
+            breakpoint_offset_idx - 1, 'Break_point_seconds'].values[0]
     # Older recordings do not have Break_point_seconds but Break_point. Need to divide by sampling rate
     except KeyError:
         try:

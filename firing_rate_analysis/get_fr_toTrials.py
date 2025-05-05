@@ -52,6 +52,12 @@ def get_fr_toTrials(memory_name,
     # The default is 0, so this will only make a difference if set at function call
     breakpoint_offset_time = breakpoint_offset
 
+    # Check for opto tags. Add dummy tags if non-existent
+    if 'JitOnset' not in info_key_times.columns:
+        info_key_times['JitOnset'] = 0
+    if 'LED_TTL' not in info_key_times.columns:
+        info_key_times['LED_TTL'] = 0
+
     # Grab GO trials and FA trials for stim response then walk back to get the immediately preceding CR trial
     # Also ignore reminder trials here
     relevant_key_times = info_key_times[
@@ -94,15 +100,17 @@ def get_fr_toTrials(memory_name,
         #   For true undetected misses, respLatency will be after the AM period during the shock period
         if 'Passive' not in key_path_info:
             cur_resptime = cur_trial['RespLatency']
+
+            if cur_trial['Hit'] == 1:
+                cur_trial_type = 'Hit'
+            elif cur_trial['Miss'] == 1:
+                cur_trial_type = 'Miss'
+            else:
+                cur_trial_type = 'FA'
+
         else:
             cur_resptime = 0
-
-        if cur_trial['Hit'] == 1:
-            cur_trial_type = 'Hit'
-        elif cur_trial['Miss'] == 1:
-            cur_trial_type = 'Miss'
-        else:
-            cur_trial_type = 'FA'
+            cur_trial_type = 'Passive'
 
         # Use different onsets depending on trial type
         if type(trial_duration_for_fr) is dict:
@@ -203,7 +211,7 @@ def get_fr_toTrials(memory_name,
         if write_or_append_flag == 'w':
             writer.writerow(['Unit'] + ['Key_file'] + ['TrialID'] + ['AMdepth'] + ['Reminder'] + ['ShockFlag'] +
                             ['Hit'] + ['Miss'] + ['CR'] + ['FA'] + ['Period'] + ['Trial_onset'] + ['Trial_offset'] +
-                            ['RespLatency'] + ['FR_Hz'] + ['Spike_count']
+                            ['JitOnset'] + ['LED_TTL'] + ['RespLatency'] + ['FR_Hz'] + ['Spike_count']
                             )
         for dummy_idx in range(0, len(nonAM_FR_list)):
             cur_row = relevant_key_times.iloc[dummy_idx, :]
@@ -216,19 +224,24 @@ def get_fr_toTrials(memory_name,
                         (nonAM_spikeCount_list, trial_spikeCount_list, aftertrial_spikeCount_list,
                          resptime_spikeCount_list, beforeresp_spikeCount_list)
                         ):
-                writer.writerow([unit_name] + [split(REGEX_SEP, key_path_info)[-1][:-4]] +
+                try:
+                    writer.writerow([unit_name] + [split(REGEX_SEP, key_path_info)[-1][:-4]] +
                                 [cur_row['TrialID']] + [round(cur_row['AMdepth'], 2)] + [cur_row['Reminder']] +
                                 [cur_row['ShockFlag']] +
                                 [cur_row['Hit']] + [cur_row['Miss']] +
                                 [cur_row['CR']] + [cur_row['FA']] +
                                 [trial_period] + [cur_row['Trial_onset']] + [cur_row['Trial_offset']] +
+                                [cur_row['JitOnset']] +
+                                [cur_row['LED_TTL']] +
                                 [cur_row['RespLatency']] +
                                 [FR_list[dummy_idx]] +
                                 [spikeCount_list[dummy_idx]])
+                except KeyError:
+                    pass
 
     # Add all info to unitData
     trialInfo_filename = split(REGEX_SEP, key_path_info)[-1][:-4]
-    for key_name in ('TrialID', 'Reminder', 'ShockFlag', 'Hit', 'Miss', 'CR', 'FA',
+    for key_name in ('TrialID', 'Reminder', 'ShockFlag', 'JitOnset', 'LED_TTL', 'Hit', 'Miss', 'CR', 'FA',
                      'Trial_onset', 'Trial_offset', 'RespLatency'):
         cur_unitData["Session"][trialInfo_filename][key_name] = relevant_key_times[key_name].values
 
