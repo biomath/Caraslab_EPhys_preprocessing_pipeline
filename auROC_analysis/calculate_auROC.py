@@ -73,11 +73,14 @@ def run_calculate_auROC(cur_unitData: dict,
                         pre_stimulus_baseline_end: float,
                         pre_stimulus_raster: float,
                         post_stimulus_raster: float,
-                        shock_flag: str or int='',
+                        respLatency_filter: float=0,
+                        shock_flag: str or int='All',
                         trial_type: str='GO',
                         byAM_depth: bool=False,
+                        amdepth_subset: list or None=None,
                         psth_binsize: float=0.01,
-                        auroc_binsize: float=0.1
+                        auroc_binsize: float=0.1,
+                        from_JSON: bool=False
                         ):
     """
     This function processes data for the area under Receiver Operating Characteristic curve (auROC) calculation
@@ -125,10 +128,17 @@ def run_calculate_auROC(cur_unitData: dict,
 
     # Load data and calculate auROCs based on trial responses aligned to SpoutOff triggering a hit
     # Need to create a deep copy here or pandas will change original input (incredibly)
-    key_filter = ['Trial_spikes', 'Response_spikes', 'Hit', 'Miss', 'FA', 'ShockFlag', 'AMdepth']
-    copy_relevant_unitData = {your_key: cur_unitData["Session"][session_name][your_key] for your_key in key_filter}
+    key_filter = ['Trial_spikes', 'Response_spikes', 'Hit', 'Miss', 'FA', 'ShockFlag', 'AMdepth', 'RespLatency']
+    if from_JSON:
+        copy_relevant_unitData = {your_key: cur_unitData[your_key] for your_key in key_filter}
+    else:
+        copy_relevant_unitData = {your_key: cur_unitData["Session"][session_name][your_key] for your_key in key_filter}
     try:
         cur_df = pd.DataFrame.from_dict(copy_relevant_unitData)
+
+        # Remove trials with response latencies lower than the filter
+        cur_df = cur_df[cur_df['RespLatency'] >= respLatency_filter]
+
     except ValueError:
         print('Loading data for auROC calculation failed with ' + cur_unitData['Unit'] + ' ---- ' + session_name)
         return cur_unitData
@@ -175,32 +185,20 @@ def run_calculate_auROC(cur_unitData: dict,
         output_name += '_shockFlagOff'
 
     if byAM_depth:
-        amdepths = np.round(sorted(list(set(copy_relevant_unitData['AMdepth']))), 2)
+        if amdepth_subset is None:
+            amdepths = np.round(sorted(list(set(copy_relevant_unitData['AMdepth']))), 2)
+        else:
+            amdepths = amdepth_subset
     else:
-        amdepths = ['All',]
+        amdepths = ['Combined',]
+
+    if respLatency_filter > 0:
+        output_name += '_respLatencyFilter'
 
     output_name_suffix = ''
     for cur_amdepth in amdepths:
         # Grab spike times
-        if cur_amdepth == 'All':
-            if shock_flag == 'All':
-                if trial_type_switchboard['GO'] == 0:
-                    spike_times = cur_df[(cur_df['Hit'] == trial_type_switchboard['Hit']) &
-                                         (cur_df['Miss'] == trial_type_switchboard['Miss']) &
-                                         (cur_df['FA'] == trial_type_switchboard['FA'])][spike_times_field]
-                else:
-                    spike_times = cur_df[(cur_df['Hit'] == 1) | (cur_df['Miss'] == 1)][spike_times_field]
-            else:
-                if trial_type_switchboard['GO'] == 0:
-                    spike_times = cur_df[(cur_df['Hit'] == trial_type_switchboard['Hit']) &
-                                         (cur_df['Miss'] == trial_type_switchboard['Miss']) &
-                                         (cur_df['FA'] == trial_type_switchboard['FA']) &
-                                         (cur_df['ShockFlag'] == shock_flag)][spike_times_field]
-                else:
-                    spike_times = cur_df[((cur_df['Hit'] == 1) | (cur_df['Miss'] == 1)) &
-                                         (cur_df['ShockFlag'] == shock_flag)][spike_times_field]
-
-        else:
+        if byAM_depth:
             output_name_suffix = '_AMdepth' + str(cur_amdepth)
             if shock_flag == 'All':
                 if trial_type_switchboard['GO'] == 0:
@@ -222,7 +220,47 @@ def run_calculate_auROC(cur_unitData: dict,
                     spike_times = cur_df[((cur_df['Hit'] == 1) | (cur_df['Miss'] == 1)) &
                                          (cur_df['ShockFlag'] == shock_flag) &
                                          (cur_df['AMdepth'] == cur_amdepth)][spike_times_field]
+        else:
+            if amdepth_subset == None:
+                if shock_flag == 'All':
+                    if trial_type_switchboard['GO'] == 0:
+                        spike_times = cur_df[(cur_df['Hit'] == trial_type_switchboard['Hit']) &
+                                             (cur_df['Miss'] == trial_type_switchboard['Miss']) &
+                                             (cur_df['FA'] == trial_type_switchboard['FA'])][spike_times_field]
+                    else:
+                        spike_times = cur_df[(cur_df['Hit'] == 1) | (cur_df['Miss'] == 1)][spike_times_field]
+                else:
+                    if trial_type_switchboard['GO'] == 0:
+                        spike_times = cur_df[(cur_df['Hit'] == trial_type_switchboard['Hit']) &
+                                             (cur_df['Miss'] == trial_type_switchboard['Miss']) &
+                                             (cur_df['FA'] == trial_type_switchboard['FA']) &
+                                             (cur_df['ShockFlag'] == shock_flag)][spike_times_field]
+                    else:
+                        spike_times = cur_df[((cur_df['Hit'] == 1) | (cur_df['Miss'] == 1)) &
+                                             (cur_df['ShockFlag'] == shock_flag)][spike_times_field]
 
+            else:
+                output_name_suffix = '_middBs'
+                if shock_flag == 'All':
+                    if trial_type_switchboard['GO'] == 0:
+                        spike_times = cur_df[(cur_df['Hit'] == trial_type_switchboard['Hit']) &
+                                             (cur_df['Miss'] == trial_type_switchboard['Miss']) &
+                                             (cur_df['FA'] == trial_type_switchboard['FA']) &
+                                             (np.in1d(cur_df['AMdepth'].values, amdepth_subset))][spike_times_field]
+                    else:
+                        spike_times = cur_df[((cur_df['Hit'] == 1) | (cur_df['Miss'] == 1)) &
+                                             (np.in1d(cur_df['AMdepth'].values, amdepth_subset))][spike_times_field]
+                else:
+                    if trial_type_switchboard['GO'] == 0:
+                        spike_times = cur_df[(cur_df['Hit'] == trial_type_switchboard['Hit']) &
+                                             (cur_df['Miss'] == trial_type_switchboard['Miss']) &
+                                             (cur_df['FA'] == trial_type_switchboard['FA']) &
+                                             (cur_df['ShockFlag'] == shock_flag) &
+                                             (np.in1d(cur_df['AMdepth'].values, amdepth_subset))][spike_times_field]
+                    else:
+                        spike_times = cur_df[((cur_df['Hit'] == 1) | (cur_df['Miss'] == 1)) &
+                                             (cur_df['ShockFlag'] == shock_flag) &
+                                             (np.in1d(cur_df['AMdepth'].values, amdepth_subset))][spike_times_field]
         # If no trials, skip
         if len(spike_times) == 0:
             cur_unitData["Session"][session_name][output_name + output_name_suffix + '_psth'] = []
@@ -242,9 +280,12 @@ def run_calculate_auROC(cur_unitData: dict,
         auroc_curve = _auROC_response_curve(hist, edges,
                                             pre_stimulus_baseline_start, pre_stimulus_baseline_end,
                                             auroc_binsize=auroc_binsize)
-
-        cur_unitData["Session"][session_name][output_name + output_name_suffix + '_psth'] = hist
-        cur_unitData["Session"][session_name][output_name + output_name_suffix + '_auroc'] = auroc_curve
+        if from_JSON:
+            cur_unitData[output_name + output_name_suffix + '_psth'] = hist
+            cur_unitData[output_name + output_name_suffix + '_auroc'] = auroc_curve
+        else:
+            cur_unitData["Session"][session_name][output_name + output_name_suffix + '_psth'] = hist
+            cur_unitData["Session"][session_name][output_name + output_name_suffix + '_auroc'] = auroc_curve
 
     return cur_unitData
 

@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 
 def get_JSON_data(json_filenames, session_type, sessions_to_run=None, sessions_to_exclude=None):
     """
@@ -12,6 +13,10 @@ def get_JSON_data(json_filenames, session_type, sessions_to_run=None, sessions_t
     """
     unit_list = []
     data_list = []
+    if type(sessions_to_run) == str:  # file path
+        sessions_file = pd.read_csv(sessions_to_run)
+        sessions_to_run = set(sessions_file['Unit'].values)
+
     for file_name in json_filenames:
         if sessions_to_run is not None:
             if any([chosen for chosen in sessions_to_run if chosen in file_name]):
@@ -57,6 +62,7 @@ def get_JSON_data(json_filenames, session_type, sessions_to_run=None, sessions_t
             exit()
 
         cur_data = cur_dict['Session'][session_name]
+        cur_data['Session'] = session_name
 
         data_list.append(cur_data)
         unit_list.append(cur_dict['Unit'])

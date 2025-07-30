@@ -12,6 +12,7 @@ from matplotlib import rcParams
 from tslearn.clustering import TimeSeriesKMeans
 import pandas as pd
 import seaborn as sns
+from auROC_analysis.calculate_auROC import *
 
 
 custom_params = {"axes.spines.right": False, "axes.spines.top": False}
@@ -36,7 +37,7 @@ def toc(t0, pre_message='Processing time:'):
 
 def load_timeSeriesKMeans(n_clusters):
     # Helper function to standardize all runs
-    km = TimeSeriesKMeans(n_clusters=n_clusters, tol=1e-30, max_iter_barycenter=500, metric='dtw', init='k-means++')
+    km = TimeSeriesKMeans(n_clusters=n_clusters, tol=1e-6, max_iter_barycenter=500, metric='euclidean', init='k-means++')
     return km
 
 
@@ -269,7 +270,7 @@ def mp_optimalK(data, output_folder, number_of_cores=1, maxClusters=10, boot_n=1
 
 
 def run_ts_clustering(data_dict, SETTINGS_DICT):
-    output_path = SETTINGS_DICT['OUTPUT_PATH'] + sep + 'TS_clustering'
+    output_path = SETTINGS_DICT['OUTPUT_PATH'] + sep + 'TS_clustering_SU'
     makedirs(output_path, exist_ok=True)
 
     # Retrieve parameters
@@ -354,7 +355,110 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                     continue
 
             except KeyError:
-                continue
+                psth_binsize = SETTINGS_DICT['PSTH_BIN_SIZE']
+                auroc_binsize = SETTINGS_DICT['AUROC_BIN_SIZE']
+                # cur_col absent from JSON file, try to generate a new field if it's implemented
+                if cur_col == 'TrialAligned_Hit_middBs_auroc':
+                    cur_data = data_dict[unit]['active']
+                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    amdepth_subset = [0.18, 0.25, 0.35, 0.5]
+                    cur_data = run_calculate_auROC(cur_data,
+                                                       session_name=cur_data['Session'],
+                                                       trial_or_response_aligned='trialAligned',
+                                                       pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                       pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                       pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                       post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                       shock_flag='All',
+                                                       trial_type='Hit',
+                                                       byAM_depth=False,
+                                                       amdepth_subset=amdepth_subset,
+                                                       psth_binsize=psth_binsize,
+                                                       auroc_binsize=auroc_binsize,
+                                                       from_JSON=True
+                                                       )
+                elif cur_col == 'ResponseAligned_Hit_middBs_auroc':
+                    cur_data = data_dict[unit]['active']
+                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    amdepth_subset = [0.18, 0.25, 0.35, 0.5]
+                    cur_data = run_calculate_auROC(cur_data,
+                                                   session_name=cur_data['Session'],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag='All',
+                                                   trial_type='Hit',
+                                                   byAM_depth=False,
+                                                   amdepth_subset=amdepth_subset,
+                                                   psth_binsize=psth_binsize,
+                                                   auroc_binsize=auroc_binsize,
+                                                   from_JSON=True
+                                                   )
+                elif cur_col == 'TrialAligned_Miss_middBs_auroc':
+                    cur_data = data_dict[unit]['active']
+                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    amdepth_subset = [0.18, 0.25, 0.35, 0.5]
+                    cur_data = run_calculate_auROC(cur_data,
+                                                       session_name=cur_data['Session'],
+                                                       trial_or_response_aligned='trialAligned',
+                                                       pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                       pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                       pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                       post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                       shock_flag='All',
+                                                       trial_type='Miss',
+                                                       byAM_depth=False,
+                                                       amdepth_subset=amdepth_subset,
+                                                       psth_binsize=psth_binsize,
+                                                       auroc_binsize=auroc_binsize,
+                                                       from_JSON=True
+                                                       )
+                elif cur_col == 'ResponseAligned_Miss_shockFlagOn_byAMdepth_auroc':
+                    cur_data = data_dict[unit]['active']
+                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    amdepth_subset = [0.18, 0.25, 0.35, 0.5]
+                    cur_data = run_calculate_auROC(cur_data,
+                                                       session_name=cur_data['Session'],
+                                                       trial_or_response_aligned='responseAligned',
+                                                       pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                       pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                       pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                       post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                       shock_flag='On',
+                                                       trial_type='Miss',
+                                                       byAM_depth=False,
+                                                       amdepth_subset=amdepth_subset,
+                                                       psth_binsize=psth_binsize,
+                                                       auroc_binsize=auroc_binsize,
+                                                       from_JSON=True
+                                                       )
+                elif cur_col == 'ResponseAligned_Hit_respLatencyFilter_middBs_auroc':
+                    cur_data = data_dict[unit]['active']
+                    respLatency_filter = SETTINGS_DICT['AUROC_RESPLATENCY_FILTER']
+                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    amdepth_subset = [0.18, 0.25, 0.35, 0.5]
+                    cur_data = run_calculate_auROC(cur_data,
+                                                   session_name=cur_data['Session'],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   respLatency_filter=respLatency_filter,
+                                                   shock_flag='All',
+                                                   trial_type='Hit',
+                                                   byAM_depth=False,
+                                                   amdepth_subset=amdepth_subset,
+                                                   psth_binsize=psth_binsize,
+                                                   auroc_binsize=auroc_binsize,
+                                                   from_JSON=True
+                                                   )
+                else:
+                    continue
+
+                response_curve = np.array(cur_data[cur_col])
 
             auroc_list.append(response_curve)
             unit_list.append(unit)

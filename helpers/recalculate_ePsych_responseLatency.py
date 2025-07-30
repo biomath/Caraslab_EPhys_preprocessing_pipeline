@@ -100,7 +100,7 @@ def recalculate_ePsych_responseLatency(input_list):
                 cur_spout_offsets = spout_offsets[(spout_offsets >= cur_onset) & (spout_offsets < cur_offset)]
                 if len(cur_spout_offsets) == 0:
                     cur_spout_offsets = spout_offsets[(spout_offsets >= (cur_onset + shock_start_end[0])) &
-                                                  (spout_offsets < (cur_offset + shock_start_end[1]))]
+                                                  (spout_offsets < (cur_onset + shock_start_end[1]))]
 
                 if len(cur_spout_offsets) == 0:  # Either animal did not withdraw with shock or this was a non-shocked miss
                     new_latencies[row_idx] = np.nan
