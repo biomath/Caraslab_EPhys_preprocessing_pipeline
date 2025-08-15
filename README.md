@@ -4,7 +4,7 @@ This pipeline is intended to be run after extracting behavioral timestamps and n
 ## Install instructions
 1. Download and install [ana/miniconda](https://docs.anaconda.com/free/miniconda/index.html)
 2. Download and install [python](https://www.python.org/downloads/) >3.11
-  - Note: Python 3.9 seems to work best if you plan on running this pipeline on PyCharm with debugging capabilities
+   - Note: Python 3.9 seems to work best if you plan on running this pipeline on PyCharm with debugging capabilities
 4. Clone this repository in your computer
 5. Open terminal window
 6. Create conda environment
