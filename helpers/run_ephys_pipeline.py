@@ -16,10 +16,11 @@ from glob import glob
 
 from helpers.compile_fr_result_csv import compile_fr_result_csv
 from helpers.write_json import write_json
-from helpers.preprocess_files import preprocess_files, find_spoutfile_and_breakpoint
+from helpers.preprocess_files import preprocess_files, find_extrafiles
 from helpers.recalculate_ePsych_responseLatency import recalculate_ePsych_responseLatency
 
 from firing_rate_analysis.get_fr_toTrials import get_fr_toTrials
+from firing_rate_analysis.get_fr_toOpto import get_fr_toOpto
 from auROC_analysis.calculate_auROC import *
 
 
@@ -47,7 +48,7 @@ def run_pipeline(input_list):
     psth_bin_size = SETTINGS_DICT['PSTH_BIN_SIZE']
     auroc_bin_size = SETTINGS_DICT['AUROC_BIN_SIZE']
 
-    memory_path, key_paths_info, key_paths_spout, cur_unitData, cur_breakpoint_df = (
+    memory_path, key_paths_info, key_paths_spoutTTL, key_paths_optoTTL, cur_unitData, cur_breakpoint_df = (
         preprocess_files(input_list))
 
     subject_id = cur_unitData['Subject']
@@ -55,10 +56,11 @@ def run_pipeline(input_list):
     sampling_rate = cur_unitData['Sampling_rate']
     recording_type = cur_unitData['Recording_type']
     for key_path_info in key_paths_info:
-        key_path_spout, breakpoint_offset, key_finder = find_spoutfile_and_breakpoint(subject_id,
-                                                                          key_path_info, key_paths_spout,
-                                                                          cur_breakpoint_df, recording_type,
-                                                                          sampling_rate)
+        key_path_spoutTTL, key_path_optoTTL, breakpoint_offset, key_finder = find_extrafiles(subject_id,
+                                                                           key_path_info, key_paths_spoutTTL,
+                                                                           key_paths_optoTTL,
+                                                                           cur_breakpoint_df, recording_type,
+                                                                           sampling_rate)
 
         # Add keys to JSON structure if they don't already exist
         try:
@@ -75,8 +77,12 @@ def run_pipeline(input_list):
             first_entry_flag = True
 
         if pipeline_switchboard['firing_rate_to_trials']:
-            cur_unitData = get_fr_toTrials(memory_path, key_path_info, key_path_spout, unit_name=unit_id,
-                                           output_path=output_path, cur_unitData=cur_unitData,
+            cur_unitData = get_fr_toTrials(memory_path,
+                                           key_path_info,
+                                           key_path_spoutTTL,
+                                           unit_id,
+                                           output_path,
+                                           cur_unitData,
                                            experiment_tag=current_process().name + "_tempfile_" + experiment_tag,
                                            first_cell_flag=first_entry_flag, breakpoint_offset=breakpoint_offset,
                                            nonAM_duration_for_fr=nonAM_duration_for_fr,
@@ -87,6 +93,21 @@ def run_pipeline(input_list):
                                            resptime_FR_start=resptime_FR_start, resptime_FR_end=resptime_FR_end,
                                            beforeresp_FR_start=beforeresp_FR_start, beforeresp_FR_end=beforeresp_FR_end
                                            )
+            write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
+        if pipeline_switchboard['firing_rate_to_opto']:
+            cur_unitData = get_fr_toOpto(memory_path,
+                                         key_path_info,
+                                         key_path_optoTTL,
+                                         unit_id,
+                                         output_path,
+                                         cur_unitData,
+                                         experiment_tag=current_process().name + "_tempfile_" + experiment_tag,
+                                         first_cell_flag=first_entry_flag, breakpoint_offset=breakpoint_offset,
+                                         baseline_duration_for_fr=0.5,
+                                         resp_duration_for_fr=0.5,
+                                         pre_stim_raster=1.,
+                                         post_stim_raster=1.
+                                         )
             write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         '''

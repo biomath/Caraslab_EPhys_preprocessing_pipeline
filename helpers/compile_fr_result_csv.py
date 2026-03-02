@@ -2,9 +2,7 @@ from os import remove, sep
 from glob import glob
 from pandas import read_csv, concat
 
-def compile_fr_result_csv(csv_prename, output_path, overwrite_previous):
-    master_sheet_name = csv_prename + '_AMsound_firing_rate.csv'
-
+def compile_fr_result_csv(master_sheet_name, output_path, overwrite_previous):
     process_files = glob(output_path + sep + '*_tempfile_' + master_sheet_name)
 
     # Read first process csv just to get the header

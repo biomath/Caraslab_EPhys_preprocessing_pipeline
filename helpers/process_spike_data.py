@@ -6,15 +6,19 @@ from pandas import read_csv, DataFrame, concat
 from decimal import Decimal
 
 
-def time_to_binary(spike_times, sampling_rate, max_time=None):
-    if max_time is None:
+def time_to_binary(spike_times, sampling_rate, signal_start_end=None):
+    if signal_start_end is None:
+        min_time = 0
         max_time = max(spike_times)
+    else:
+        min_time = signal_start_end[0]
+        max_time = signal_start_end[1]
 
     # Rounding spike times according to desired sampling rate
-    sampling_decimal_accuracy = abs(Decimal(str(sampling_rate)).as_tuple().exponent)
+    sampling_decimal_accuracy = 5  # 0.1 ms
     spike_times = np.round(spike_times, sampling_decimal_accuracy)
 
-    time = np.arange(0, max_time, sampling_rate)
+    time = np.round(np.arange(min_time, max_time, 1/sampling_rate), sampling_decimal_accuracy)
     spikes = np.zeros(len(time))
 
     indeces = np.in1d(time, spike_times)
@@ -22,7 +26,7 @@ def time_to_binary(spike_times, sampling_rate, max_time=None):
     for i in np.where(indeces):
         spikes[i] = 1
 
-    return spikes
+    return time, spikes
 
 
 def binary_to_time(raster, sampling_rate):
@@ -50,6 +54,8 @@ def spike_timing_process_data(rasters_dict, sampling_rate, sigma):
 
 
 def bin_train(train, sampling_rate, bin_ms):
+    '''OBSOLETE. Just use np.histogram instead'''
+
     binned_train = list()
 
     step_size = int(bin_ms * sampling_rate * 1000)

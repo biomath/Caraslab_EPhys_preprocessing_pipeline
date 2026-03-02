@@ -12,6 +12,7 @@ from matplotlib import rcParams
 from tslearn.clustering import TimeSeriesKMeans
 import pandas as pd
 import seaborn as sns
+import scipy.stats as st
 from auROC_analysis.calculate_auROC import *
 
 
@@ -230,10 +231,16 @@ def mp_optimalK(data, output_folder, number_of_cores=1, maxClusters=10, boot_n=1
     for dummy_idx, k in enumerate(k_range):
         cur_k_gaps = [bkg[2] for bkg in boot_k_gap_array if bkg[1] == k]
         mean_per_cluster[dummy_idx] = np.mean(cur_k_gaps)
-        std_per_cluster[dummy_idx] = np.std(cur_k_gaps, ddof=0)
+        # std_per_cluster[dummy_idx] = np.std(cur_k_gaps, ddof=1)
+        cur_ci = st.norm.interval(confidence=0.95, loc=mean_per_cluster[dummy_idx], scale=np.std(cur_k_gaps, ddof=1))
+        std_per_cluster[dummy_idx] = cur_ci[1] - cur_ci[0]
 
     # Tibshirani et al., 2001's error: s(k)_factor * s(k)
-    sks_per_cluster = sk_factor * (np.sqrt(1 + 1 / boot_n) * std_per_cluster)
+    # sks_per_cluster = sk_factor * (np.sqrt(1 + 1 / boot_n) * std_per_cluster)
+
+    # Alternatively, use only CIs
+    sks_per_cluster = std_per_cluster
+
     tibs_score_lower_bound = np.array([cur_mean - cur_sk for cur_mean, cur_sk in zip(mean_per_cluster, sks_per_cluster)])
     tibs_score_upper_bound = np.array([cur_mean + cur_sk for cur_mean, cur_sk in zip(mean_per_cluster, sks_per_cluster)])
 
@@ -333,6 +340,9 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
         unique_units = sorted(list(set((data_dict.keys()))))
         for unit in unique_units:
 
+            # Debug
+            # del data_dict[unit]['active'][cur_col]
+
             # Passive data are special cases because trial type is irrelevant; handle them first
             try:
                 if 'Passive' in cur_col:
@@ -346,9 +356,12 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                         continue
                     response_curve = np.array(cur_data['TrialAligned_GO_auroc'])
                 else:
-                    # Active data, thus trial type is relevant
+                    # Active data, thus trial type is relevant unless all AM responses are desired
                     cur_data = data_dict[unit]['active']
-                    response_curve = np.array(cur_data[cur_col])
+                    if 'GO' not in cur_col:
+                        response_curve = np.array(cur_data[cur_col])
+                    else:
+                        response_curve = np.array(cur_data['TrialAligned_GO_auroc'])
 
                 # Exclude units without responses (no FA trials for example)
                 if len(response_curve) == 0 or np.mean(response_curve) == 0:
@@ -360,7 +373,7 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                 # cur_col absent from JSON file, try to generate a new field if it's implemented
                 if cur_col == 'TrialAligned_Hit_middBs_auroc':
                     cur_data = data_dict[unit]['active']
-                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    # Include only AM depths in the middle of the range (-15:-6 dB) which are the ones to be learned
                     amdepth_subset = [0.18, 0.25, 0.35, 0.5]
                     cur_data = run_calculate_auROC(cur_data,
                                                        session_name=cur_data['Session'],
@@ -379,7 +392,7 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                                                        )
                 elif cur_col == 'ResponseAligned_Hit_middBs_auroc':
                     cur_data = data_dict[unit]['active']
-                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    # Include only AM depths in the middle of the range (-15:-6 dB) which are the ones to be learned
                     amdepth_subset = [0.18, 0.25, 0.35, 0.5]
                     cur_data = run_calculate_auROC(cur_data,
                                                    session_name=cur_data['Session'],
@@ -398,7 +411,7 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                                                    )
                 elif cur_col == 'TrialAligned_Miss_middBs_auroc':
                     cur_data = data_dict[unit]['active']
-                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    # Include only AM depths in the middle of the range (-15:-6 dB) which are the ones to be learned
                     amdepth_subset = [0.18, 0.25, 0.35, 0.5]
                     cur_data = run_calculate_auROC(cur_data,
                                                        session_name=cur_data['Session'],
@@ -415,9 +428,50 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                                                        auroc_binsize=auroc_binsize,
                                                        from_JSON=True
                                                        )
+
+                elif cur_col == 'TrialAligned_GO_respLatencyFilter_middBs_auroc':
+                    cur_data = data_dict[unit]['active']
+                    respLatency_filter = SETTINGS_DICT['AUROC_RESPLATENCY_FILTER']
+                    # Include only AM depths in the middle of the range (-15:-6 dB) which are the ones to be learned
+                    amdepth_subset = [0.18, 0.25, 0.35, 0.5]
+                    cur_data = run_calculate_auROC(cur_data,
+                                                       session_name=cur_data['Session'],
+                                                       trial_or_response_aligned='trialAligned',
+                                                       pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                       pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                       pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                       post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                       respLatency_filter=respLatency_filter,
+                                                       shock_flag='All',
+                                                       trial_type='GO',
+                                                       byAM_depth=False,
+                                                       amdepth_subset=amdepth_subset,
+                                                       psth_binsize=psth_binsize,
+                                                       auroc_binsize=auroc_binsize,
+                                                       from_JSON=True
+                                                       )
+                elif cur_col == 'TrialAligned_GO_respLatencyFilter_shockFlagOn_auroc':
+                    cur_data = data_dict[unit]['active']
+                    respLatency_filter = SETTINGS_DICT['AUROC_RESPLATENCY_FILTER']
+                    cur_data = run_calculate_auROC(cur_data,
+                                                       session_name=cur_data['Session'],
+                                                       trial_or_response_aligned='trialAligned',
+                                                       pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                       pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                       pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                       post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                       respLatency_filter=respLatency_filter,
+                                                       shock_flag=1,
+                                                       trial_type='GO',
+                                                       byAM_depth=False,
+                                                       amdepth_subset=None,
+                                                       psth_binsize=psth_binsize,
+                                                       auroc_binsize=auroc_binsize,
+                                                       from_JSON=True
+                                                       )
                 elif cur_col == 'ResponseAligned_Miss_shockFlagOn_byAMdepth_auroc':
                     cur_data = data_dict[unit]['active']
-                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    # Include only AM depths in the middle of the range (-15:-6 dB) which are the ones to be learned
                     amdepth_subset = [0.18, 0.25, 0.35, 0.5]
                     cur_data = run_calculate_auROC(cur_data,
                                                        session_name=cur_data['Session'],
@@ -426,18 +480,38 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
                                                        pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
                                                        pre_stimulus_raster=pretrial_duration_for_spiketimes,
                                                        post_stimulus_raster=posttrial_duration_for_spiketimes,
-                                                       shock_flag='On',
+                                                       shock_flag=1,
                                                        trial_type='Miss',
-                                                       byAM_depth=False,
+                                                       byAM_depth=True,
                                                        amdepth_subset=amdepth_subset,
                                                        psth_binsize=psth_binsize,
                                                        auroc_binsize=auroc_binsize,
                                                        from_JSON=True
                                                        )
+                elif cur_col == 'ResponseAligned_Miss_shockFlagOn_middBs_auroc':
+                    cur_data = data_dict[unit]['active']
+                    # Include only AM depths in the middle of the range (-15:-6 dB) which are the ones to be learned
+                    amdepth_subset = [0.18, 0.25, 0.35, 0.5]
+                    cur_data = run_calculate_auROC(cur_data,
+                                                   session_name=cur_data['Session'],
+                                                   trial_or_response_aligned='responseAligned',
+                                                   pre_stimulus_baseline_start=pretrial_duration_for_spiketimes,
+                                                   pre_stimulus_baseline_end=pretrial_duration_for_spiketimes - 1,
+                                                   pre_stimulus_raster=pretrial_duration_for_spiketimes,
+                                                   post_stimulus_raster=posttrial_duration_for_spiketimes,
+                                                   shock_flag=1,
+                                                   trial_type='Miss',
+                                                   byAM_depth=False,
+                                                   amdepth_subset=amdepth_subset,
+                                                   psth_binsize=psth_binsize,
+                                                   auroc_binsize=auroc_binsize,
+                                                   from_JSON=True
+                                                   )
+
                 elif cur_col == 'ResponseAligned_Hit_respLatencyFilter_middBs_auroc':
                     cur_data = data_dict[unit]['active']
                     respLatency_filter = SETTINGS_DICT['AUROC_RESPLATENCY_FILTER']
-                    # Include only AM depths in the middle of the range (-12:-6 dB) which are the ones to be learned
+                    # Include only AM depths in the middle of the range (-15:-6 dB) which are the ones to be learned
                     amdepth_subset = [0.18, 0.25, 0.35, 0.5]
                     cur_data = run_calculate_auROC(cur_data,
                                                    session_name=cur_data['Session'],
@@ -538,12 +612,42 @@ def run_ts_clustering(data_dict, SETTINGS_DICT):
             # Reorder input using index of max(abs(auROC))
             sorted_plot_list = list()
             sorted_indices = list()
+            mean_cluster_auc = list()
             for cluster_id in sorted(list(set(clusters))):
                 cur_indices = cluster_df[cluster_df['Cluster_id'] == cluster_id].index.tolist()
                 sorted_indices.extend(cur_indices)
                 cur_resps = auroc_list[cur_indices]
-                cur_abs = np.abs(relevant_snippet[cur_indices])
-                idx_sort = np.argsort([np.argmax(x) for x in cur_abs])
+
+                # This sorts within clusters
+                # cur_abs = np.abs(relevant_snippet[cur_indices])
+                # idx_sort = np.argsort([np.argmax(x) for x in cur_abs])
+
+                # This helps sort across clusters and lets within cluster be random
+                mean_cluster_auc.append(np.nanmean(relevant_snippet[cur_indices]))
+
+                idx_sort = range(0, len(cur_resps))
+                sorted_plot_list.extend(cur_resps[idx_sort])
+
+            idx_sort = np.argsort(mean_cluster_auc)
+            cluster_order = [sorted(list(set(clusters)))[i] for i in idx_sort]
+
+            # Reorder across clusters now
+            sorted_plot_list = list()
+            sorted_indices = list()
+            mean_cluster_auc = list()
+            for cluster_id in cluster_order:
+                cur_indices = cluster_df[cluster_df['Cluster_id'] == cluster_id].index.tolist()
+                sorted_indices.extend(cur_indices)
+                cur_resps = auroc_list[cur_indices]
+
+                # This sorts within clusters
+                # cur_abs = np.abs(relevant_snippet[cur_indices])
+                # idx_sort = np.argsort([np.argmax(x) for x in cur_abs])
+
+                # This helps sort across clusters and lets within cluster be random
+                mean_cluster_auc.append(np.nanmean(relevant_snippet[cur_indices]))
+
+                idx_sort = range(0, len(cur_resps))
                 sorted_plot_list.extend(cur_resps[idx_sort])
 
             # abs_values = np.abs(relevant_snippet)

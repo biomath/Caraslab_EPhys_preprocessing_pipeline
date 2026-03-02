@@ -33,8 +33,10 @@ def preprocess_files(input_list):
     # Match by name for now for breakpoints
     key_paths_info = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
                           cur_date + "*_trialInfo.csv")
-    key_paths_spout = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
+    key_paths_spoutTTL = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
                            cur_date + "*spoutTimestamps.csv")
+    key_paths_optoTTL = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
+                           cur_date + "*optoTimestamps.csv")
 
     if len(key_paths_info) == 0:
         # Maybe the key file wasn't found because date is in Intan format
@@ -43,9 +45,10 @@ def preprocess_files(input_list):
         cur_date = datetime.strftime(cur_date, '%y-%m-%d')
         key_paths_info = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
                               cur_date + "*_trialInfo.csv")
-        key_paths_spout = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
+        key_paths_spoutTTL = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
                                cur_date + "*_spoutTimestamps.csv")
-
+        key_paths_optoTTL = glob(SETTINGS_DICT['KEYS_PATH'] + sep + subject_id + '*' +
+                               cur_date + "*_optoTimestamps.csv")
     if len(key_paths_info) == 0:
         print("Key not found for " + unit_id)
         return
@@ -69,10 +72,11 @@ def preprocess_files(input_list):
                         'Sampling_rate': sampling_rate,
                         'Session': {}}
 
-    return memory_path, key_paths_info, key_paths_spout, cur_unitData, cur_breakpoint_df
+    return memory_path, key_paths_info, key_paths_spoutTTL, key_paths_optoTTL, cur_unitData, cur_breakpoint_df
 
 
-def find_spoutfile_and_breakpoint(subject_id, key_path_info, key_paths_spout, cur_breakpoint_df, recording_type, sampling_rate):
+def find_extrafiles(subject_id, key_path_info, key_paths_spoutTTL, key_paths_optoTTL,
+                    cur_breakpoint_df, recording_type, sampling_rate):
     """
     Grab some files and specifics about each behavioral file
     Only works with this format. Modify indices below if you need to modify
@@ -93,18 +97,25 @@ def find_spoutfile_and_breakpoint(subject_id, key_path_info, key_paths_spout, cu
         key_finder = '_'.join([key_finder[x] for x in intan_key_finder_index])
 
         # This is able to handle the extra SUBJ field before the key identifier in some intan recordings.
-        if 'Passive' not in key_finder and 'Active' not in key_finder and 'Aversive' not in key_finder and 'Extinction' not in key_finder:
+        if ('passive' not in key_finder.lower() and 'active' not in key_finder.lower() and
+                'aversive' not in key_finder.lower() and 'extinction' not in key_finder.lower()):
             key_finder = split(REGEX_SEP, key_path_info)[-1]
             key_finder = split("_*_", key_finder)
             key_finder = '_'.join([key_finder[x+1] for x in intan_key_finder_index])
 
-    key_path_spout_finder = [search(key_finder, file_name) for file_name in key_paths_spout]
+    try:
+        spoutTTL_path_finder = [search(key_finder, file_name) for file_name in key_paths_spoutTTL]
+        spoutTTL_path_finder = [i for i, x in enumerate(spoutTTL_path_finder) if x is not None][0]
+        key_path_spoutTTL = key_paths_spoutTTL[spoutTTL_path_finder]
+    except IndexError:
+        key_path_spoutTTL = None
 
     try:
-        key_path_spout_finder = [i for i, x in enumerate(key_path_spout_finder) if x is not None][0]
-        key_path_spout = key_paths_spout[key_path_spout_finder]
+        optoTTL_path_finder = [search(key_finder, file_name) for file_name in key_paths_optoTTL]
+        optoTTL_path_finder = [i for i, x in enumerate(optoTTL_path_finder) if x is not None][0]
+        key_path_optoTTL = key_paths_optoTTL[optoTTL_path_finder]
     except IndexError:
-        key_path_spout = None
+        key_path_optoTTL = None
 
     # Find appropriate breakpoint for file if it exists
     try:
@@ -130,4 +141,4 @@ def find_spoutfile_and_breakpoint(subject_id, key_path_info, key_paths_spout, cu
             breakpoint_offset = 0  # first file; no breakpoint offset needed
         except Exception as e:
             raise e
-    return key_path_spout, breakpoint_offset, key_finder
+    return key_path_spoutTTL, key_path_optoTTL, breakpoint_offset, key_finder

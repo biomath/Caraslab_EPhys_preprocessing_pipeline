@@ -35,7 +35,7 @@ def recalculate_ePsych_responseLatency(input_list):
 
     for recording_path in session_date_paths:
         # Automatically skip passive files here for obvious reasons :)
-        if 'Passive' in recording_path:
+        if 'passive' in recording_path.lower():
             continue
 
         split_key_path = split(REGEX_SEP, recording_path)[-1]  # split path
@@ -55,7 +55,8 @@ def recalculate_ePsych_responseLatency(input_list):
             key_finder = '_'.join([key_finder[x] for x in intan_key_finder_index])
 
             # This is able to handle the extra SUBJ field before the key identifier in some intan recordings.
-            if 'Passive' not in key_finder and 'Active' not in key_finder and 'Aversive' not in key_finder and 'Exctinction' not in key_finder:
+            if ('passive' not in key_finder.lower() and 'active' not in key_finder.lower() and
+                    'aversive' not in key_finder.lower() and 'extinction' not in key_finder.lower()):
                 key_finder = split(REGEX_SEP, recording_path)[-1]
                 key_finder = split("_*_", key_finder)
                 key_finder = '_'.join([key_finder[x + 1] for x in intan_key_finder_index])

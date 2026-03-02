@@ -89,7 +89,7 @@ def get_fr_toTrials(memory_name,
         try:
             previous_cr = info_key_times[(info_key_times['CR'] == 1) &
                                          (info_key_times['TrialID'] < cur_trial['TrialID'])].iloc[-1]
-        except IndexError:  # In case there is no CR before a hit, skip trial
+        except IndexError:  # In case there is no CR before current trial, skip trial
             relevant_key_times.drop(dummy_index, inplace=True)
             continue
 
@@ -106,7 +106,7 @@ def get_fr_toTrials(memory_name,
             elif cur_trial['Miss'] == 1:
                 cur_trial_type = 'Miss'
             else:
-                cur_trial_type = 'FA'
+                cur_trial_type = 'FA'  # Irrelevant but compute anyways
 
         else:
             cur_resptime = 0
@@ -159,20 +159,20 @@ def get_fr_toTrials(memory_name,
             (previous_cr['Trial_onset'] + breakpoint_offset_time < spike_times) &
             (spike_times < previous_cr['Trial_onset'] + breakpoint_offset_time + nonAM_duration_for_fr)]
 
-        trial_spikes = spike_times[(spike_times > cur_trial['Trial_onset'] + breakpoint_offset_time) &
+        trial_spikes = spike_times[(spike_times >= cur_trial['Trial_onset'] + breakpoint_offset_time) &
                                    (spike_times < (cur_trial[
                                                        'Trial_onset'] + breakpoint_offset_time + cur_stim_duration_for_fr_s))]
 
         aftertrial_spikes = spike_times[
-            (spike_times > (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_aftertrial_start)) &
+            (spike_times >= (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_aftertrial_start)) &
             (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_aftertrial_end))]
 
         resptime_spikes = spike_times[
-            (spike_times > (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime + cur_resptime_start)) &
+            (spike_times >= (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime + cur_resptime_start)) &
             (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime + cur_resptime_end))]
 
         beforeresp_spikes = spike_times[
-            (spike_times > (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime - cur_beforeresp_start)) &
+            (spike_times >= (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime - cur_beforeresp_start)) &
             (spike_times < (cur_trial['Trial_onset'] + breakpoint_offset_time + cur_resptime - cur_beforeresp_end))]
 
         # FR calculations
