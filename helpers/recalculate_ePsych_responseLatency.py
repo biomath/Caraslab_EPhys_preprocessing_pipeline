@@ -28,6 +28,8 @@ def recalculate_ePsych_responseLatency(input_list):
     shock_start_end = SETTINGS_DICT['SHOCK_START_END']
     output_path = SETTINGS_DICT['KEYS_PATH']
     key_paths_spout = glob(SETTINGS_DICT['KEYS_PATH'] + sep + "*spoutTimestamps.csv")
+    key_finder_index_dict = SETTINGS_DICT['KEY_FINDER_INDEX']
+
     save_dir = output_path
 
     # save_dir = output_path + sep + 'new_respLatencies'
@@ -41,25 +43,22 @@ def recalculate_ePsych_responseLatency(input_list):
         split_key_path = split(REGEX_SEP, recording_path)[-1]  # split path
         subject_id = split('_*_', split_key_path)[0]
         recording_type = SETTINGS_DICT['RECORDING_TYPE_DICT'][subject_id]
-
-        # Split path name to get subject, session and unit ID for prettier output
-        synapse_key_finder_index = 1  # MML-Aversive-AM-210501-112033 after splitting at "_"
-        intan_key_finder_index = [1, 2, 3]  # 2021-07-17, 15-19-28, Active after splitting at "_"
+        key_finder_index = key_finder_index_dict[recording_type]
 
         if recording_type == 'synapse':
             key_finder = split(REGEX_SEP, recording_path)[-1]
-            key_finder = split("_*_", key_finder)[synapse_key_finder_index]
+            key_finder = split("_*_", key_finder)[key_finder_index]
         else:
             key_finder = split(REGEX_SEP, recording_path)[-1]
             key_finder = split("_*_", key_finder)
-            key_finder = '_'.join([key_finder[x] for x in intan_key_finder_index])
+            key_finder = '_'.join([key_finder[x] for x in key_finder_index])
 
             # This is able to handle the extra SUBJ field before the key identifier in some intan recordings.
             if ('passive' not in key_finder.lower() and 'active' not in key_finder.lower() and
                     'aversive' not in key_finder.lower() and 'extinction' not in key_finder.lower()):
                 key_finder = split(REGEX_SEP, recording_path)[-1]
                 key_finder = split("_*_", key_finder)
-                key_finder = '_'.join([key_finder[x + 1] for x in intan_key_finder_index])
+                key_finder = '_'.join([key_finder[x + 1] for x in key_finder_index])
 
         key_path_spout_finder = [search(key_finder, file_name) for file_name in key_paths_spout]
 
@@ -78,10 +77,10 @@ def recalculate_ePsych_responseLatency(input_list):
         new_latencies = np.zeros(len(info_key_times))
 
         for row_idx, row_slice in info_key_times.iterrows():
+            cur_onset = row_slice['Trial_onset']
+            cur_offset = row_slice['Trial_offset']
+            cur_spout_offsets = spout_offsets[(spout_offsets >= cur_onset) & (spout_offsets < cur_offset)]
             if (row_slice['Hit'] == 1) | (row_slice['FA'] == 1):
-                cur_onset = row_slice['Trial_onset']
-                cur_offset = row_slice['Trial_offset']
-                cur_spout_offsets = spout_offsets[(spout_offsets >= cur_onset) & (spout_offsets < cur_offset)]
                 if len(cur_spout_offsets) == 0:  # Sometimes this is not registered properly in RZ6
                     print('Spout offset not registered properly in: ' + recording_path +
                           '\nTrialID: ' + str(row_slice['TrialID']) + '\n\n')
@@ -91,26 +90,25 @@ def recalculate_ePsych_responseLatency(input_list):
                     new_latencies[row_idx] = last_offset - cur_onset
             elif row_slice['Miss'] == 1:
                 # If miss trial:
-                # 1. Look for spout offsets during the trial. These trials can be handled separately since the animal
+                # 1. Look for spout offsets during the trial (above). These trials can be handled separately since the animal
                 #   might have detected the AM sound but failed to stay off spout for some reason
                 # 2. If no spout offsets during the trial were found, look for offsets during the shock period. If
                 #   none are found, return NaN
-                cur_onset = row_slice['Trial_onset']
-                cur_offset = row_slice['Trial_offset']
-
-                cur_spout_offsets = spout_offsets[(spout_offsets >= cur_onset) & (spout_offsets < cur_offset)]
-                if len(cur_spout_offsets) == 0:
+                if len(cur_spout_offsets) == 0:  # No spout offsets during trial, look for offsets during shock period plus 0.5 s
                     cur_spout_offsets = spout_offsets[(spout_offsets >= (cur_onset + shock_start_end[0])) &
-                                                  (spout_offsets < (cur_onset + shock_start_end[1]))]
+                                                  (spout_offsets < (cur_onset + shock_start_end[1] + 0.5))]
 
-                if len(cur_spout_offsets) == 0:  # Either animal did not withdraw with shock or this was a non-shocked miss
+                if len(cur_spout_offsets) == 0:  # Either animal did not withdraw with shock or this was a non-shocked miss without any spout withdrawals
                     new_latencies[row_idx] = np.nan
                 else:
                     last_offset = cur_spout_offsets[-1]  # Get the last offset
                     new_latencies[row_idx] = last_offset - cur_onset
-
-            else:
-                new_latencies[row_idx] = np.nan
+            else:  # CR trials: ther might be special cases where the animal quickly left the spout and came back; handle these trials with caution
+                if len(cur_spout_offsets) == 0:
+                    new_latencies[row_idx] = np.nan
+                else:
+                    last_offset = cur_spout_offsets[-1]  # Get the last offset
+                    new_latencies[row_idx] = last_offset - cur_onset
 
         # Replace dummy latencies
         info_key_times['RespLatency'] = new_latencies

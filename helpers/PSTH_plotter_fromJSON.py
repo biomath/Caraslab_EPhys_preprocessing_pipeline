@@ -4,11 +4,12 @@ from re import split
 import platform
 from time import time
 import numpy as np
+import matplotlib
+matplotlib.use('agg')  # Required to avoid known memory leak caused by matplotlib with Jupyter
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
 from matplotlib.backends.backend_pdf import PdfPages
-import matplotlib
-matplotlib.use('agg')  # Required to avoid known memory leak caused by matplotlib with Jupyter
+
 from gc import collect
 
 from helpers.format_axes import format_ax
@@ -130,46 +131,47 @@ def __plot_aligned_spikes(aligned_spikes, pre_stimulus_raster, post_stimulus_ras
 def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                      post_stimulus_raster, psth_fixed_ylim, raster_ylim, trial_types, align_to_response,
                      shock_artifact):
+    print('Plotting Trial type PSTH for ' + unit_name + '...')
     with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(int(psth_bin_size*1000)) + 'ms.pdf'])) as pdf:
-        for session in cur_data.keys():
-            if session == 'active':
+        for session in cur_data['Session'].keys():
+            if 'active' in session.lower() or 'aversive' in session.lower():
                 for trial_type in trial_types:
                     if trial_type == 'Hit':
                         cur_trial_mask = np.all(
-                            [np.array(cur_data[session]['Hit']) == 1,
-                             np.array(cur_data[session]['Reminder']) == 0],
+                            [np.array(cur_data['Session'][session]['Hit']) == 1,
+                             np.array(cur_data['Session'][session]['Reminder']) == 0],
                             axis=0)
                     elif trial_type == 'Hit (shock)':
                         cur_trial_mask = np.all(
-                            [np.array(cur_data[session]['Hit']) == 1,
-                             np.array(cur_data[session]['ShockFlag']) == 1,
-                             np.array(cur_data[session]['Reminder']) == 0],
+                            [np.array(cur_data['Session'][session]['Hit']) == 1,
+                             np.array(cur_data['Session'][session]['ShockFlag']) == 1,
+                             np.array(cur_data['Session'][session]['Reminder']) == 0],
                             axis=0)
 
                     elif trial_type == 'Hit (no shock)':
                         cur_trial_mask = np.all(
-                            [np.array(cur_data[session]['Hit']) == 1,
-                             np.array(cur_data[session]['ShockFlag']) == 0,
-                             np.array(cur_data[session]['Reminder']) == 0],
+                            [np.array(cur_data['Session'][session]['Hit']) == 1,
+                             np.array(cur_data['Session'][session]['ShockFlag']) == 0,
+                             np.array(cur_data['Session'][session]['Reminder']) == 0],
                             axis=0)
 
                     elif trial_type == 'False alarm':
-                        cur_trial_mask = np.all([np.array(cur_data[session]['FA']) == 1,
-                                                 np.array(cur_data[session]['Reminder']) == 0], axis=0)
+                        cur_trial_mask = np.all([np.array(cur_data['Session'][session]['FA']) == 1,
+                                                 np.array(cur_data['Session'][session]['Reminder']) == 0], axis=0)
 
                     elif trial_type == 'Miss (shock)':
-                        cur_trial_mask = np.all([np.array(cur_data[session]['Miss']) == 1,
-                                                 np.array(cur_data[session]['ShockFlag']) == 1,
-                                                 np.array(cur_data[session]['Reminder']) == 0], axis=0)
+                        cur_trial_mask = np.all([np.array(cur_data['Session'][session]['Miss']) == 1,
+                                                 np.array(cur_data['Session'][session]['ShockFlag']) == 1,
+                                                 np.array(cur_data['Session'][session]['Reminder']) == 0], axis=0)
 
                     else:  # passive trials are handled in the scope above this loop
                         continue
 
                     if not align_to_response:
-                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
+                        spike_times = [x for x_idx, x in enumerate(cur_data['Session'][session]['Trial_spikes']) if
                                        cur_trial_mask[x_idx]]
                     else:
-                        spike_times = [x for x_idx, x in enumerate(cur_data[session]['Response_spikes']) if
+                        spike_times = [x for x_idx, x in enumerate(cur_data['Session'][session]['Response_spikes']) if
                                        cur_trial_mask[x_idx]]
 
                     plot_suptitle = unit_name + "\n" + session + '\n' + trial_type
@@ -179,7 +181,7 @@ def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_s
             else:
                 # Assume passive
                 trial_type = 'passive'
-                spike_times = cur_data[session]['Trial_spikes']
+                spike_times = cur_data['Session'][session]['Trial_spikes']
                 plot_suptitle = unit_name + "\n" + session + '\n' + trial_type
                 __plot_aligned_spikes(spike_times, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
                                       psth_fixed_ylim, raster_ylim, plot_suptitle, pdf)
@@ -188,17 +190,18 @@ def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_s
 
 def __amDepth_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                    post_stimulus_raster, psth_fixed_ylim, raster_ylim, responseLatency_filter):
+    print('Plotting AM depth PSTH for ' + unit_name + '...')
     with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(psth_bin_size) + 'ms.pdf'])) as pdf:
-        for session in cur_data.keys():
-            cur_amdepths = sorted(list(set(cur_data[session]['AMdepth'])))
+        for session in cur_data['Session'].keys():
+            cur_amdepths = sorted(list(set(cur_data['Session'][session]['AMdepth'])))
             # 0 AMDepth is only for False alarms in the current version, non-AM psths can be extracted from before each AM trial
             cur_amdepths = [x for x in cur_amdepths if x > 0]
             for amdepth in cur_amdepths:
                 cur_trial_mask = np.all(
-                    [np.array(cur_data[session]['AMdepth']) == amdepth, np.array(cur_data[session]['Reminder']) == 0,
-                     np.array(cur_data[session]['RespLatency']) > responseLatency_filter],
+                    [np.array(cur_data['Session'][session]['AMdepth']) == amdepth, np.array(cur_data['Session'][session]['Reminder']) == 0,
+                     np.array(cur_data['Session'][session]['RespLatency']) > responseLatency_filter],
                     axis=0)
-                spike_times = [np.array(x) for x_idx, x in enumerate(cur_data[session]['Trial_spikes']) if
+                spike_times = [np.array(x) for x_idx, x in enumerate(cur_data['Session'][session]['Trial_spikes']) if
                                cur_trial_mask[x_idx]]
                 if amdepth > 0:
                     amdepth_log = np.round(20 * np.log10(amdepth), 1)
@@ -213,10 +216,15 @@ def __amDepth_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_sti
 
 def __opto_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                    post_stimulus_raster, psth_fixed_ylim, raster_ylim):
+    print('Plotting Opto PSTH for ' + unit_name + '...')
     with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(psth_bin_size) + 'ms.pdf'])) as pdf:
-        for session in cur_data.keys():
+        for session in cur_data['Session'].keys():
             # LED on
-            spike_times = [np.array(x) for x in cur_data[session]['LED_on_trialSpikes']]
+            try:
+                spike_times = [np.array(x) for x in cur_data['Session'][session]['LED_on_trialSpikes']]
+            except KeyError:
+                print('LED_on_trialSpikes not found in session ' + session)
+                continue
 
             plot_suptitle = unit_name + "\n" + session + '\n' + 'LED ON'
             __plot_aligned_spikes(spike_times, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
@@ -224,7 +232,7 @@ def __opto_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimul
             collect()
 
             # LED off
-            spike_times = [np.array(x) for x in cur_data[session]['LED_off_trialSpikes']]
+            spike_times = [np.array(x) for x in cur_data['Session'][session]['LED_off_trialSpikes']]
             plot_suptitle = unit_name + "\n" + session + '\n' + 'LED OFF'
             __plot_aligned_spikes(spike_times, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
                                   psth_fixed_ylim, raster_ylim, plot_suptitle, pdf)
@@ -232,7 +240,8 @@ def __opto_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimul
 
 
 def run_PSTH_pipeline(input_list):
-    unit_name, data_dict, SETTINGS_DICT = input_list
+    data_dict, SETTINGS_DICT = input_list
+    unit_name = data_dict['Unit']
     output_path = SETTINGS_DICT['OUTPUT_PATH'] + sep + 'PSTHs'
     psth_bin_size = SETTINGS_DICT['PSTH_BIN_SIZE']
     pre_stimulus_raster = SETTINGS_DICT['PSTH_PRE_STIMULUS_DURATION']
@@ -241,9 +250,8 @@ def run_PSTH_pipeline(input_list):
     raster_ylim = SETTINGS_DICT['PSTH_RASTER_YLIM']
     trial_types = SETTINGS_DICT['PSTH_TRIALTYPES']
     align_to_response = SETTINGS_DICT['PSTH_ALIGN_TO_RESPONSE']
-    responseLatency_filter = SETTINGS_DICT['PSTH_RESPONSELATENCY_FILTER']
+    responseLatency_filter = SETTINGS_DICT['RESPLATENCY_FILTER']
     shock_artifact = SETTINGS_DICT['SHOCK_START_END']
-    pipeline_switchboard = SETTINGS_DICT['PIPELINE_SWITCHBOARD']
 
     # Set plotting parameters
     label_font_size = 11
@@ -274,23 +282,20 @@ def run_PSTH_pipeline(input_list):
     subject_id = split_unit_name[0]
 
     ''' PSTH separated by trial types '''
-    if pipeline_switchboard['plot_trialType_PSTH']:
-        output_subfolder = sep.join([output_path, subject_id, 'TrialType'])
-        makedirs(output_subfolder, exist_ok=True)
-        __trialType_psth(data_dict, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
-                         post_stimulus_raster, psth_fixed_ylim, raster_ylim, trial_types, align_to_response,
-                         shock_artifact)
+    output_subfolder = sep.join([output_path, subject_id, 'TrialType'])
+    makedirs(output_subfolder, exist_ok=True)
+    __trialType_psth(data_dict, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
+                     post_stimulus_raster, psth_fixed_ylim, raster_ylim, trial_types, align_to_response,
+                     shock_artifact)
 
     ''' PSTH separated by AM depth '''
-    if pipeline_switchboard['plot_AMDepth_PSTH']:
-        output_subfolder = sep.join([output_path, subject_id, 'AMDepth'])
-        makedirs(output_subfolder, exist_ok=True)
-        __amDepth_psth(data_dict, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
-                       post_stimulus_raster, psth_fixed_ylim, raster_ylim, responseLatency_filter)
+    output_subfolder = sep.join([output_path, subject_id, 'AMDepth'])
+    makedirs(output_subfolder, exist_ok=True)
+    __amDepth_psth(data_dict, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
+                   post_stimulus_raster, psth_fixed_ylim, raster_ylim, responseLatency_filter)
 
     ''' PSTH aligned to opto LED onset and offset '''
-    if pipeline_switchboard['plot_opto_PSTH']:
-        output_subfolder = sep.join([output_path, subject_id, 'Opto'])
-        makedirs(output_subfolder, exist_ok=True)
-        __opto_psth(data_dict, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
-                       post_stimulus_raster, psth_fixed_ylim, raster_ylim)
+    output_subfolder = sep.join([output_path, subject_id, 'Opto'])
+    makedirs(output_subfolder, exist_ok=True)
+    __opto_psth(data_dict, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
+                   post_stimulus_raster, psth_fixed_ylim, raster_ylim)
