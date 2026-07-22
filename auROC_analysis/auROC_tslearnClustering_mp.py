@@ -1,3 +1,10 @@
+"""Time-series clustering of per-unit auROC/PSTH curves via tslearn's DTW-aware KMeans.
+
+Determines the optimal cluster count with the gap statistic (Tibshirani et
+al., 2001), computed either single-process, via CPU multiprocessing, or
+(experimentally, see ``gpu_randomTSKMeans``) on a CUDA GPU. ``run_ts_clustering``
+is the main entry point tying this together for a full dataset.
+"""
 from os import remove, makedirs
 from os.path import sep
 import platform
@@ -28,23 +35,50 @@ else:
 
 
 def tic():
+    """Return the current time (seconds); pair with ``toc`` to time a block."""
     return time()
 
 
 def toc(t0, pre_message='Processing time:'):
+    """Print elapsed time since ``t0`` (from ``tic()``), formatted as minutes/seconds.
+
+    Args:
+        t0 (float): Start time, as returned by ``tic()``.
+        pre_message (str): Text printed before the elapsed-time readout.
+    """
     tkend = time() - t0
     print(pre_message + ' %d min, %.3f sec' % (tkend // 60, np.round(tkend % 60, 3)))
 
 
 def load_timeSeriesKMeans(n_clusters):
-    # Helper function to standardize all runs
+    """Build a ``TimeSeriesKMeans`` clusterer with this module's standard settings.
+
+    Args:
+        n_clusters (int): Number of clusters to fit.
+
+    Returns:
+        tslearn.clustering.TimeSeriesKMeans: Unfitted clusterer (euclidean
+        metric, k-means++ init, tight convergence tolerance).
+    """
     km = TimeSeriesKMeans(n_clusters=n_clusters, tol=1e-6, max_iter_barycenter=500, metric='euclidean', init='k-means++')
     return km
 
 
 def mp_TSKMeans(mp_input_list, output_folder):
+    """Fit a TimeSeriesKMeans model for one k and append its inertia to a temp file.
+
+    Currently unused: no caller of this function was found in the repo.
+
+    Args:
+        mp_input_list (tuple): ``(k, data)`` — number of clusters and the
+            time-series data to fit on.
+        output_folder (str): Directory to write the per-process temp
+            ``*_dataTSK_tsClustering.npy`` file into.
+
+    Returns:
+        None. Appends ``(k, km.inertia_)`` to the temp file.
+    """
     # Output inertia from each run
-    # Currently unused function
     k, data = mp_input_list
     tmp_file_name = output_folder + sep + current_process().name + "_dataTSK_tsClustering.npy"
 
@@ -57,7 +91,23 @@ def mp_TSKMeans(mp_input_list, output_folder):
 
 
 def mp_randomTSKMeans(mp_input_list):
+    """Compute one gap-statistic bootstrap sample: cluster a random reference set and compare inertia.
 
+    Used as a multiprocessing worker (one call per (bootstrap, k) combination)
+    for the gap-statistic computation in ``mp_optimalK``.
+
+    Args:
+        mp_input_list (tuple): ``(boot_k_combination, data_shape, data_inertia,
+            output_folder)`` where ``boot_k_combination`` is ``(boot_index,
+            k)``, ``data_shape`` is the shape of a uniform-random reference
+            array to generate, ``data_inertia`` is the real data's inertia
+            for this k (for the gap-statistic comparison), and
+            ``output_folder`` is where to append the result.
+
+    Returns:
+        None. Appends ``boot_index, k, gap`` as a CSV-formatted line to this
+        worker's ``*_randomTSK_tsClustering.txt`` temp file.
+    """
     # Create new random reference set and cluster to get inertia
     boot_k_combination, data_shape, data_inertia, output_folder = mp_input_list
 
@@ -82,6 +132,27 @@ def mp_randomTSKMeans(mp_input_list):
 
 
 def gpu_randomTSKMeans(gpu_input_list, output_folder):
+        """GPU-accelerated variant of ``mp_randomTSKMeans``, batching the bootstrap gap-statistic computation.
+
+        NOTE: the nested ``compute_randomTSKMeans`` kernel calls
+        ``np.random.random_sample`` and instantiates/fits a
+        ``TimeSeriesKMeans`` (a scikit-learn-style Python object) from inside a
+        ``@cuda.jit`` device function. Numba's CUDA JIT does not support
+        arbitrary Python objects or most of NumPy's higher-level API in device
+        code (only a restricted subset of array operations), so this is very
+        likely to fail to compile/run as written rather than actually execute on
+        the GPU — treat this function as unverified/likely non-functional.
+
+        Args:
+            gpu_input_list (tuple): ``(boot_k_combination_list, data_shape_list,
+                data_inertia_list)`` — per-bootstrap-sample inputs, batched for
+                the CUDA grid (one thread per sample).
+            output_folder (str): Directory to write the temp result file into.
+
+        Returns:
+            None. Appends each ``boot_index, k, gap`` result as a CSV-formatted
+            line to this worker's ``*_randomTSK_tsClustering.txt`` temp file.
+        """
         @cuda.jit(nopython=False)
         def compute_randomTSKMeans(boot_k_combination_list, data_shape_list, data_inertia_list, gpu_output_list):
             cuda_idx = cuda.grid(1)
@@ -277,6 +348,37 @@ def mp_optimalK(data, output_folder, number_of_cores=1, maxClusters=10, boot_n=1
 
 
 def run_ts_clustering(data_dict, SETTINGS_DICT):
+    """Cluster units by their auROC/PSTH time-series shape, for each configured trial-type/window.
+
+    For every entry in ``SETTINGS_DICT['TS_TRIALTYPES']`` (a dict mapping a
+    data-field name, e.g. 'TrialAligned_GO_respLatencyFilter_middBs_auroc',
+    to a (clustering_time_start, clustering_time_end) window): gathers that
+    field's time series across all units in ``data_dict``, extracts the
+    relevant time window, determines the optimal number of clusters via the
+    gap statistic (``mp_optimalK``), then performs hierarchical clustering
+    and plots (a) the gap-statistic curve, (b) a dendrogram/heatmap of the
+    hierarchical clustering, and (c) each cluster's mean response curve.
+    Which data field each ``cur_col`` maps to structurally (e.g. its
+    baseline-normalization approach) is resolved by a long ``elif cur_col ==
+    ...`` dispatch — add a new branch there to support a new field name.
+
+    Args:
+        data_dict (dict): Maps unit ID -> per-unit data (auROC/PSTH fields
+            as produced by ``calculate_auROC``/PSTH plotting steps).
+        SETTINGS_DICT (dict): Pipeline settings, notably ``OUTPUT_PATH``,
+            ``AUROC_PRE_STIMULUS_DURATION``/``AUROC_POST_STIMULUS_DURATION``/
+            ``AUROC_BIN_SIZE`` (must match what was used to generate the
+            input time series), ``NUMBER_OF_CORES``/``MULTIPROCESS``/
+            ``USE_GPU`` (GPU takes precedence, disabling CPU multiprocessing
+            if enabled), ``MAXCLUSTERS``/``BOOT_N``/``SK_FACTOR``/
+            ``USE_TIBSHIRANI_CRITERION`` (forwarded to ``mp_optimalK``), and
+            ``TS_TRIALTYPES`` (the field->window dict described above).
+
+    Returns:
+        None. Writes, per trial type, a gap-statistic CSV+PDF, a
+        hierarchical-clustering CSV+PDF, and a mean-response-per-cluster PDF
+        under ``<OUTPUT_PATH>/TS_clustering_SU``.
+    """
     output_path = SETTINGS_DICT['OUTPUT_PATH'] + sep + 'TS_clustering_SU'
     makedirs(output_path, exist_ok=True)
 

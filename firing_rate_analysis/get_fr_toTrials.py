@@ -36,12 +36,65 @@ def get_fr_toTrials(memory_path,
                     # For calculating pre-response firing rate (will be converted to negative)
                     beforeresp_FR_end: dict | int = 0
                     ):
-    """
-    Process spike data around trials
-    Takes key files and writes two files:
-    1. Firing rates within window (_AMsound_firing_rate.csv)
-    2. Number of spout events during that window (_AMsound_firing_rate.csv)
-    3. All timestamped spikes during that window for timeseries analyses (_AMsound_spikes.json)
+    """Process spike data around AM-sound trials.
+
+    For each Hit/Miss/FA trial (Reminders and CRs excluded — CRs are only
+    used as baseline reference), computes firing rates in several windows
+    (pre-trial baseline from the nearest valid preceding CR, trial period,
+    trial onset, after-trial, around response time, and before response) and
+    collects zero-centered spike rasters aligned to both trial onset and
+    response time. Any of the window-size parameters may be passed either as
+    a single number (used for all trial types) or as a dict keyed by trial
+    type ('Hit'/'Miss'/'FA'/'CR'/'Passive') for per-type windows.
+
+    Writes one row per trial per FR window to
+    ``<experiment_tag>_AMsound_firing_rate.csv``, and stores the same data
+    (plus per-trial spike rasters) onto ``cur_unitData`` for later
+    timeseries/z-score analyses.
+
+    Args:
+        memory_path (str): Path to the unit's spike-times file (whitespace-
+            delimited timestamps, loaded with ``np.genfromtxt``).
+        key_path_info (str): Path to this session's trialInfo CSV; also used
+            (via its filename, sans '.csv') as the session key under
+            ``cur_unitData["Session"]``. If 'passive' appears in this path,
+            response-time-relative windows/baseline logic use the passive branch.
+        unit_id (str): Unit identifier, written into the output CSV.
+        output_path (str): Directory to write the firing-rate CSV into.
+        cur_unitData (dict): Running per-unit data structure to update in place.
+        experiment_tag (str, optional): Prefix for the output CSV name; if
+            None, the CSV name is empty (effectively disabling the CSV write).
+        first_cell_flag (bool): If True, (re)write the CSV with a header row;
+            if False, append without a header (assumes the file already exists).
+        breakpoint_offset (float): Seconds to add to each trial timestamp to
+            align it with this unit's spike-time clock (for concatenated recordings).
+        nonAM_duration_for_fr (dict or float): Window length (s), starting at
+            the reference CR trial's onset, used for the pre-trial baseline FR.
+        trial_duration_for_fr (dict or float): Window length (s) after trial
+            onset used for the 'Trial' period FR.
+        trialOnset_duration_for_fr (dict or float): Window length (s) after
+            trial onset used for the 'TrialOnset' period FR (typically shorter
+            than ``trial_duration_for_fr``).
+        pre_stim_raster (float): Seconds of spikes to include before trial
+            onset in the zero-centered raster.
+        post_stim_raster (float): Seconds of spikes to include after trial
+            onset in the zero-centered raster.
+        aftertrial_FR_start (dict or float): Start offset (s, relative to
+            trial onset) of the after-trial FR window; useful for Misses.
+        aftertrial_FR_end (dict or float): End offset (s, relative to trial
+            onset) of the after-trial FR window.
+        resptime_FR_start (dict or float): Start offset (s, relative to
+            response time) of the post-response FR window.
+        resptime_FR_end (dict or float): End offset (s, relative to response
+            time) of the post-response FR window.
+        beforeresp_FR_start (dict or float): How far before response time (s)
+            the pre-response FR window begins (subtracted from response time).
+        beforeresp_FR_end (dict or float): How far before response time (s)
+            the pre-response FR window ends (subtracted from response time).
+
+    Returns:
+        dict: ``cur_unitData``, updated with per-trial metadata, zero-centered
+        trial/response spike rasters, and all FR arrays for this session.
     """
     # Load key files
     info_key_times = read_csv(key_path_info)
@@ -167,7 +220,10 @@ def get_fr_toTrials(memory_path,
 
         # Zero center around response time
         if np.isnan(cur_resptime):
-            zerocentered_response_spikes.append([None, ])
+            # No response latency for this trial: record zero response-aligned spikes
+            # (an empty array, not a [None] sentinel, so np.round/downstream numeric
+            # comparisons against this field don't break)
+            zerocentered_response_spikes.append(np.array([]))
         else:
             zerocentered_response_spikes.append(
                 spikes_around_trial - (cur_trial_onset + cur_resptime))

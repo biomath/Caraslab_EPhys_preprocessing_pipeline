@@ -5,6 +5,8 @@ from os.path import sep
 import platform
 from pandas import read_csv
 
+from helpers.preprocess_files import extract_session_key
+
 # Tweak the regex file separator for cross-platform compatibility
 if platform.system() == 'Windows':
     REGEX_SEP = sep * 2
@@ -28,7 +30,6 @@ def recalculate_ePsych_responseLatency(input_list):
     shock_start_end = SETTINGS_DICT['SHOCK_START_END']
     output_path = SETTINGS_DICT['KEYS_PATH']
     key_paths_spout = glob(SETTINGS_DICT['KEYS_PATH'] + sep + "*spoutTimestamps.csv")
-    key_finder_index_dict = SETTINGS_DICT['KEY_FINDER_INDEX']
 
     save_dir = output_path
 
@@ -42,23 +43,7 @@ def recalculate_ePsych_responseLatency(input_list):
 
         split_key_path = split(REGEX_SEP, recording_path)[-1]  # split path
         subject_id = split('_*_', split_key_path)[0]
-        recording_type = SETTINGS_DICT['RECORDING_TYPE_DICT'][subject_id]
-        key_finder_index = key_finder_index_dict[recording_type]
-
-        if recording_type == 'synapse':
-            key_finder = split(REGEX_SEP, recording_path)[-1]
-            key_finder = split("_*_", key_finder)[key_finder_index]
-        else:
-            key_finder = split(REGEX_SEP, recording_path)[-1]
-            key_finder = split("_*_", key_finder)
-            key_finder = '_'.join([key_finder[x] for x in key_finder_index])
-
-            # This is able to handle the extra SUBJ field before the key identifier in some intan recordings.
-            if ('passive' not in key_finder.lower() and 'active' not in key_finder.lower() and
-                    'aversive' not in key_finder.lower() and 'extinction' not in key_finder.lower()):
-                key_finder = split(REGEX_SEP, recording_path)[-1]
-                key_finder = split("_*_", key_finder)
-                key_finder = '_'.join([key_finder[x + 1] for x in key_finder_index])
+        key_finder = extract_session_key(split_key_path)
 
         key_path_spout_finder = [search(key_finder, file_name) for file_name in key_paths_spout]
 
@@ -94,9 +79,9 @@ def recalculate_ePsych_responseLatency(input_list):
                 #   might have detected the AM sound but failed to stay off spout for some reason
                 # 2. If no spout offsets during the trial were found, look for offsets during the shock period. If
                 #   none are found, return NaN
-                if len(cur_spout_offsets) == 0:  # No spout offsets during trial, look for offsets during shock period plus 0.5 s
+                if len(cur_spout_offsets) == 0:  # No spout offsets during trial, look for offsets during shock period
                     cur_spout_offsets = spout_offsets[(spout_offsets >= (cur_onset + shock_start_end[0])) &
-                                                  (spout_offsets < (cur_onset + shock_start_end[1] + 0.5))]
+                                                  (spout_offsets < (cur_onset + shock_start_end[1]))]
 
                 if len(cur_spout_offsets) == 0:  # Either animal did not withdraw with shock or this was a non-shocked miss without any spout withdrawals
                     new_latencies[row_idx] = np.nan

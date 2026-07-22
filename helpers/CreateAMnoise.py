@@ -1,3 +1,12 @@
+"""Standalone script that synthesizes a demo amplitude-modulated (AM) noise
+stream for the AM-detection psychometric task and saves it as a .wav plus a
+waveform figure (.pdf).
+
+Not organized into functions — run top to bottom as a script. The stream
+alternates non-AM (white noise) segments with AM segments at each modulation
+depth in ``modulation_index_db``, separated by a random inter-trial interval
+(ITI) drawn from ``iti``.
+"""
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -33,6 +42,7 @@ last_end += 1
 final_signal = list()
 for cur_idx, cur_mod in enumerate(modulation_index_db):
     # AM
+    # Convert modulation depth from dB to a linear fraction (0 dB -> full depth = 1)
     modulation_index_frac = 10 ** (cur_mod / 20)
     modulator = (1 + modulation_index_frac * np.cos(2 * np.pi * f_m * t_mod - 1.75))
     cur_noise = modulator*generator.noise(sampling_rate * duration_mod, color='white')
@@ -43,7 +53,7 @@ for cur_idx, cur_mod in enumerate(modulation_index_db):
     if cur_idx == len(modulation_index_db)-1:  # if it's the last AM, just add one non-AM
         wait_time = 1
     else:
-        wait_time = np.random.randint(iti[0], iti[1] + 1)
+        wait_time = np.random.randint(iti[0], iti[1] + 1)  # random ITI (seconds) of non-AM noise
     for _ in np.arange(1, wait_time + 1):
         cur_noise = generator.noise(sampling_rate * duration_unmod, color='white')
         ax.plot(np.linspace(last_end, last_end+1, len(cur_noise)), cur_noise, color=nonAM_color, rasterized=True)

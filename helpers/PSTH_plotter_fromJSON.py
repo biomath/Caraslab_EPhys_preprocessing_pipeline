@@ -3,12 +3,14 @@ from os.path import sep
 from re import split
 import platform
 from time import time
+from multiprocessing import Pool
 import numpy as np
 import matplotlib
 matplotlib.use('agg')  # Required to avoid known memory leak caused by matplotlib with Jupyter
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
 from matplotlib.backends.backend_pdf import PdfPages
+from helpers import get_JSON_data
 
 from gc import collect
 
@@ -22,6 +24,7 @@ else:
 
 
 def tic():
+    """Return the current time (seconds); pair with a second ``tic()`` call to time a block."""
     return time()
 
 def __common_psth_engine(spike_times,
@@ -32,6 +35,35 @@ def __common_psth_engine(spike_times,
                          hist_bin_size=0.01,
                          do_plot=True,
                          rasterize=True):
+    """Draw a raster plot and compute/optionally plot the corresponding PSTH histogram.
+
+    Accepts spikes either as raw timestamps plus stimulus onset times to
+    align to (``key_times`` given), or as already zero-centered per-trial
+    spike arrays (``key_times=None``).
+
+    Args:
+        spike_times: If ``key_times`` is given, a flat array of raw spike
+            timestamps to align per-trial. Otherwise, a list of per-trial
+            arrays already centered on the event of interest.
+        pre_stimulus_raster (float): Seconds before the event to include.
+        post_stimulus_raster (float): Seconds after the event to include.
+        key_times (Iterable[float], optional): Stimulus/event onset
+            timestamps to align ``spike_times`` to; if None, ``spike_times``
+            is assumed pre-aligned.
+        ax_raster (matplotlib.axes.Axes, optional): Axes to draw the raster onto.
+        ax_psth (matplotlib.axes.Axes, optional): Axes to draw the PSTH bar plot onto.
+        ax_gaussian: Unused; kept for call-site compatibility.
+        breakpoint_offset (float, optional): Seconds added to each entry in
+            ``key_times`` to align with this unit's spike-time clock.
+        hist_bin_size (float): PSTH histogram bin width (s).
+        do_plot (bool): If False, only compute and return the histogram
+            without drawing anything (``ax_raster``/``ax_psth`` unused).
+        rasterize (bool): Whether to rasterize the raster line plot (for
+            smaller vector output files with many trials).
+
+    Returns:
+        np.ndarray: PSTH firing rate (Hz) per bin, averaged across trials.
+    """
     bin_cuts = np.arange(-pre_stimulus_raster, post_stimulus_raster + hist_bin_size, hist_bin_size)
 
     # raster_trial_counter = 0
@@ -92,7 +124,21 @@ def __common_psth_engine(spike_times,
 
 def __plot_aligned_spikes(aligned_spikes, pre_stimulus_raster, post_stimulus_raster, psth_bin_size,
                           psth_fixed_ylim, raster_ylim, plot_suptitle, pdf_handle):
+    """Render one raster+PSTH figure page for a set of pre-aligned per-trial spike arrays.
 
+    Args:
+        aligned_spikes (Sequence): One zero-centered spike-time array per trial.
+        pre_stimulus_raster (float): Seconds before the event shown.
+        post_stimulus_raster (float): Seconds after the event shown.
+        psth_bin_size (float): PSTH histogram bin width (s).
+        psth_fixed_ylim (float): Upper y-limit for the PSTH rate axis.
+        raster_ylim (float): Upper y-limit for the raster trial-count axis.
+        plot_suptitle (str): Figure title (unit/session/condition label).
+        pdf_handle (matplotlib.backends.backend_pdf.PdfPages): Open PDF handle to save into.
+
+    Returns:
+        None. Saves one page to ``pdf_handle`` and closes the figure.
+    """
     aligned_spikes = [np.array(x) for x in aligned_spikes]
     # Plot
     plt.clf()
@@ -131,6 +177,32 @@ def __plot_aligned_spikes(aligned_spikes, pre_stimulus_raster, post_stimulus_ras
 def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                      post_stimulus_raster, psth_fixed_ylim, raster_ylim, trial_types, align_to_response,
                      shock_artifact):
+    """Generate one multi-page PDF of PSTHs, one page per session/trial-type combination.
+
+    For active/aversive sessions, splits trials by outcome (per
+    ``trial_types``: Hit, Hit (shock), Hit (no shock), False alarm, Miss
+    (shock)), excluding reminder trials. Passive sessions are plotted as a
+    single unsplit PSTH.
+
+    Args:
+        cur_data (dict): Unit JSON data (``cur_data['Session'][...]`` holds
+            per-session trial outcome flags and spike arrays).
+        output_subfolder (str): Directory to save the output PDF into.
+        unit_name (str): Unit identifier, used in the output filename/titles.
+        psth_bin_size (float): PSTH histogram bin width (s).
+        pre_stimulus_raster (float): Seconds before the event shown.
+        post_stimulus_raster (float): Seconds after the event shown.
+        psth_fixed_ylim (float): Upper y-limit for the PSTH rate axis.
+        raster_ylim (float): Upper y-limit for the raster trial-count axis.
+        trial_types (Iterable[str]): Which trial-type categories to plot for
+            active/aversive sessions.
+        align_to_response (bool): If True, align spikes to response time
+            ('Response_spikes') instead of trial onset ('Trial_spikes').
+        shock_artifact: Unused here; kept for call-site compatibility.
+
+    Returns:
+        None. Writes ``<unit_name>_PSTH_<bin_ms>ms.pdf`` into ``output_subfolder``.
+    """
     print('Plotting Trial type PSTH for ' + unit_name + '...')
     with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(int(psth_bin_size*1000)) + 'ms.pdf'])) as pdf:
         for session in cur_data['Session'].keys():
@@ -190,6 +262,28 @@ def __trialType_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_s
 
 def __amDepth_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                    post_stimulus_raster, psth_fixed_ylim, raster_ylim, responseLatency_filter):
+    """Generate one multi-page PDF of PSTHs, one page per session/AM-depth combination.
+
+    Splits trials by AM modulation depth (excluding reminder trials and
+    trials below ``responseLatency_filter``), converting each depth to dB
+    re: 100% for the plot title.
+
+    Args:
+        cur_data (dict): Unit JSON data (``cur_data['Session'][...]`` holds
+            per-session AM depth, trial spikes, and response-latency arrays).
+        output_subfolder (str): Directory to save the output PDF into.
+        unit_name (str): Unit identifier, used in the output filename/titles.
+        psth_bin_size (float): PSTH histogram bin width (s).
+        pre_stimulus_raster (float): Seconds before the event shown.
+        post_stimulus_raster (float): Seconds after the event shown.
+        psth_fixed_ylim (float): Upper y-limit for the PSTH rate axis.
+        raster_ylim (float): Upper y-limit for the raster trial-count axis.
+        responseLatency_filter (float): Minimum response latency (s) for a
+            trial to be included.
+
+    Returns:
+        None. Writes ``<unit_name>_PSTH_<bin_size>ms.pdf`` into ``output_subfolder``.
+    """
     print('Plotting AM depth PSTH for ' + unit_name + '...')
     with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(psth_bin_size) + 'ms.pdf'])) as pdf:
         for session in cur_data['Session'].keys():
@@ -216,6 +310,25 @@ def __amDepth_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_sti
 
 def __opto_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                    post_stimulus_raster, psth_fixed_ylim, raster_ylim):
+    """Generate one multi-page PDF of PSTHs aligned to opto LED onset and offset.
+
+    Sessions without an 'LED_on_trialSpikes' key (no opto performed) are
+    skipped with a printed message.
+
+    Args:
+        cur_data (dict): Unit JSON data (``cur_data['Session'][...]`` holds
+            'LED_on_trialSpikes'/'LED_off_trialSpikes' arrays).
+        output_subfolder (str): Directory to save the output PDF into.
+        unit_name (str): Unit identifier, used in the output filename/titles.
+        psth_bin_size (float): PSTH histogram bin width (s).
+        pre_stimulus_raster (float): Seconds before the event shown.
+        post_stimulus_raster (float): Seconds after the event shown.
+        psth_fixed_ylim (float): Upper y-limit for the PSTH rate axis.
+        raster_ylim (float): Upper y-limit for the raster trial-count axis.
+
+    Returns:
+        None. Writes ``<unit_name>_PSTH_<bin_size>ms.pdf`` into ``output_subfolder``.
+    """
     print('Plotting Opto PSTH for ' + unit_name + '...')
     with PdfPages(sep.join([output_subfolder, unit_name + '_PSTH_' + str(psth_bin_size) + 'ms.pdf'])) as pdf:
         for session in cur_data['Session'].keys():
@@ -240,7 +353,25 @@ def __opto_psth(cur_data, output_subfolder, unit_name, psth_bin_size, pre_stimul
 
 
 def run_PSTH_pipeline(input_list):
-    data_dict, SETTINGS_DICT = input_list
+    """Entry point: generate all PSTH PDFs (trial-type, AM-depth, opto) for one unit.
+
+    Loads the unit's JSON data, applies uniform plotting style settings, and
+    dispatches to ``__trialType_psth``, ``__amDepth_psth``, and
+    ``__opto_psth`` in turn, each writing its own PDF under a subject-specific subfolder.
+
+    Args:
+        input_list (tuple): ``(file_name, SETTINGS_DICT)`` where ``file_name``
+            is the unit JSON path and ``SETTINGS_DICT`` supplies
+            ``OUTPUT_PATH`` and the various ``PSTH_*``/``RESPLATENCY_FILTER``/
+            ``SHOCK_START_END`` settings.
+
+    Returns:
+        None. Writes PDFs under ``<OUTPUT_PATH>/PSTHs/<subject_id>/{TrialType,AMDepth,Opto}``.
+    """
+    file_name, SETTINGS_DICT = input_list
+
+    data_dict = get_JSON_data._load_one_json(file_name)
+
     unit_name = data_dict['Unit']
     output_path = SETTINGS_DICT['OUTPUT_PATH'] + sep + 'PSTHs'
     psth_bin_size = SETTINGS_DICT['PSTH_BIN_SIZE']
@@ -299,3 +430,27 @@ def run_PSTH_pipeline(input_list):
     makedirs(output_subfolder, exist_ok=True)
     __opto_psth(data_dict, output_subfolder, unit_name, psth_bin_size, pre_stimulus_raster,
                    post_stimulus_raster, psth_fixed_ylim, raster_ylim)
+
+
+def run_full_PSTH_pipeline(filtered_files, SETTINGS_DICT):
+    """Generate PSTH PDFs for every unit in ``filtered_files``.
+
+    This is the notebook-level driver: runs ``run_PSTH_pipeline`` once per
+    unit, serially or via a process pool per ``SETTINGS_DICT['MULTIPROCESS']``.
+
+    Args:
+        filtered_files (Iterable[str]): Unit JSON paths to process.
+        SETTINGS_DICT (dict): Pipeline settings. Uses ``MULTIPROCESS`` and
+            ``NUMBER_OF_CORES``; the rest are forwarded to ``run_PSTH_pipeline``.
+
+    Returns:
+        None. Writes PDFs under ``<OUTPUT_PATH>/PSTHs/<subject_id>/{TrialType,AMDepth,Opto}``.
+    """
+    if not SETTINGS_DICT['MULTIPROCESS']:
+        for fn in filtered_files:
+            run_PSTH_pipeline((fn, SETTINGS_DICT))
+    else:
+        input_list = [(fn, SETTINGS_DICT) for fn in filtered_files]
+        with Pool(SETTINGS_DICT['NUMBER_OF_CORES']) as pool:
+            for _ in pool.imap_unordered(run_PSTH_pipeline, input_list, chunksize=1):
+                pass

@@ -7,6 +7,20 @@ from decimal import Decimal
 
 
 def time_to_binary(spike_times, sampling_rate, signal_start_end=None):
+    """Convert spike timestamps into a binary raster sampled at ``sampling_rate``.
+
+    Args:
+        spike_times (array-like): Spike timestamps (seconds).
+        sampling_rate (float): Sampling rate (Hz) used to build the time bins.
+        signal_start_end (tuple[float, float], optional): (start, end) time
+            window to build the raster over; defaults to
+            ``(0, max(spike_times))`` if not given.
+
+    Returns:
+        tuple: ``(time, spikes)`` where ``time`` is the array of bin edge
+        timestamps and ``spikes`` is a same-length binary array (1 where a
+        spike falls in that bin).
+    """
     if signal_start_end is None:
         min_time = 0
         max_time = max(spike_times)
@@ -30,6 +44,17 @@ def time_to_binary(spike_times, sampling_rate, signal_start_end=None):
 
 
 def binary_to_time(raster, sampling_rate):
+    """Convert a binary raster back into spike timestamps.
+
+    Args:
+        raster (array-like): Binary array (1 where a spike occurred).
+        sampling_rate (float): Value each bin index is multiplied by to
+            recover a timestamp (note: this is a multiplication, so pass the
+            bin *duration*, not a rate in Hz, despite the parameter name).
+
+    Returns:
+        np.ndarray: Timestamps of bins where ``raster == 1``.
+    """
     spike_indices, = np.where(raster == 1)
     spike_indices = spike_indices.astype(float)
 
@@ -37,6 +62,20 @@ def binary_to_time(raster, sampling_rate):
 
 
 def gaussian_moving_average_fft(spikes, sampling_rate, sigma, dtype='times'):
+    """Smooth a spike train with a Gaussian kernel via FFT convolution.
+
+    Args:
+        spikes (array-like): Spike timestamps if ``dtype == 'times'``, or an
+            already-binary raster if ``dtype == 'binary'``.
+        sampling_rate (float): Sampling rate (Hz); only used to binarize when
+            ``dtype == 'times'``.
+        sigma (float): Standard deviation of the Gaussian kernel, in bins.
+        dtype (str): 'times' to binarize ``spikes`` first, or 'binary' if
+            already a raster.
+
+    Returns:
+        np.ndarray: Smoothed firing-rate estimate, same length as the raster.
+    """
     if dtype is 'times':
         binary_spikes = time_to_binary(spike_times=spikes, sampling_rate=sampling_rate)
         return convolve_fft(binary_spikes, Gaussian1DKernel(stddev=sigma))
@@ -45,6 +84,18 @@ def gaussian_moving_average_fft(spikes, sampling_rate, sigma, dtype='times'):
 
 
 def spike_timing_process_data(rasters_dict, sampling_rate, sigma):
+    """Apply Gaussian smoothing to every trial's raster for every stimulus.
+
+    Args:
+        rasters_dict (dict): Maps stimulus key -> list of per-trial binary rasters.
+        sampling_rate (float): Recording sampling rate (Hz), forwarded to
+            ``gaussian_moving_average_fft``.
+        sigma (float): Gaussian kernel standard deviation, in bins.
+
+    Returns:
+        dict: Same structure as ``rasters_dict``, with each raster replaced
+        by its smoothed firing-rate estimate.
+    """
     gaussians_dict = dict((key, []) for key in rasters_dict.keys())
     for key in rasters_dict.keys():
         for sweep in rasters_dict[key]:
@@ -74,16 +125,26 @@ def bin_train(train, sampling_rate, bin_ms):
 
 def load_rasters(memory_name, sampling_rate, pre_stimulus_time, post_stimulus_time,
                           key_name=None, make_baseline_stim=False, spike_time_unit='s'):
-    """
-    Function takes the recording name and the desired gaussian width (sigma) and returns
-    a dictionary (pre, ne, post) containing a subdictionary (stim49, stim50, stim51, stim52),
-    which contains a list of peristimulus spike rasters smoothed by a gaussian filter
-    :param recording: recording name.
-    Key file names have to have the format (e.g.) _PRE_KEY.csv
-    Memory file names have to have the format (e.g.) _PRE_MEMORY.txt
-    :param sigma: gaussian width
-    :return:  (pre, ne, post) containing a subdictionary (stim49, stim50, stim51, stim52),
-    which contains a list of peristimulus spike rasters smoothed by a gaussian filter
+    """Load spike times and stimulus key times, and build per-stimulus peristimulus rasters.
+
+    Args:
+        memory_name (str): Path to the spike-times file (whitespace-delimited
+            timestamps, loaded with ``np.genfromtxt``). Also used as the key
+            file if ``key_name`` is None.
+        sampling_rate (float): Recording sampling rate (Hz).
+        pre_stimulus_time (float): Seconds before each stimulus onset to include in the raster.
+        post_stimulus_time (float): Seconds after each stimulus onset to include in the raster.
+        key_name (str, optional): Path to a separate stimulus key CSV (first
+            column = onset time, second column = stimulus ID). If None,
+            ``memory_name`` is read as both the key and spike file.
+        make_baseline_stim (bool): If True, synthesize an extra 'Baseline'
+            pseudo-stimulus using timestamps 2s before the earliest and
+            latest presentations of each real stimulus.
+        spike_time_unit (str): 's' or 'ms'; spike timestamps are converted to seconds if 'ms'.
+
+    Returns:
+        dict: Maps stimulus key -> list of per-trial binary rasters (see
+        ``generate_rasters_from_csv``).
     """
     if key_name is None:
         key_times = read_csv(memory_name)
@@ -142,6 +203,24 @@ def load_rasters(memory_name, sampling_rate, pre_stimulus_time, post_stimulus_ti
 
 def generate_rasters_from_csv(spike_times, markers_df, sampling_rate, pre_stimulus_time,
                                                  post_stimulus_time):
+    """Slice a binarized spike train into a fixed-length raster around each stimulus onset.
+
+    Args:
+        spike_times (array-like): Raw spike timestamps.
+        markers_df (pandas.DataFrame): Stimulus events; column 0 = onset time
+            (in the same units as ``sampling_rate`` divides out, i.e. sample
+            index-like), column 1 = stimulus ID/key.
+        sampling_rate (float): Recording sampling rate, used both to
+            binarize the spike train and to convert onset times to bin indices.
+        pre_stimulus_time (float): Samples before onset to include.
+        post_stimulus_time (float): Samples after onset to include.
+
+    Returns:
+        dict: Maps each unique stimulus ID (sorted) -> list of fixed-length
+        binary rasters, one per presentation of that stimulus. Rasters
+        clipped/padded by a bin or two due to rounding are trimmed/zero-padded
+        to a consistent length.
+    """
     binary_spikes = time_to_binary(spike_times, sampling_rate)
 
     # number_of_stimuli = len(set(markers_df.iloc[:, 1]))

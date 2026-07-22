@@ -1,4 +1,12 @@
 def format_ax(ax, **kwargs):
+    """Apply consistent, publication-style formatting to a matplotlib Axes.
+
+    Strips the top/right spines and moves ticks to the left/bottom only.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to format in place.
+        **kwargs: Optional ``ylabel`` and/or ``xlabel`` strings to set.
+    """
     kwargs_dict = dict(kwargs)
     if 'ylabel' in kwargs_dict:
         ax.set_ylabel(kwargs_dict['ylabel'])

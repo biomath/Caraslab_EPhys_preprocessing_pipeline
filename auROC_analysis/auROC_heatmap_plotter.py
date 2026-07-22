@@ -20,6 +20,34 @@ else:
     REGEX_SEP = sep
 
 def run_auROC_heatmap_pipeline(data_dict, SETTINGS_DICT):
+    """Build and save a multi-panel auROC heatmap PDF across units and trial types.
+
+    For each unit, gathers its passive-pre/passive-post/active auROC
+    response curves, then for each optional unit grouping (e.g. by brain
+    area or condition, from ``AUROC_GROUPING_FILE``) sorts units within the
+    group by their mean auROC over a reference window/trial type
+    (``SORT_BY_WHICH_TRIALTYPE``). Units are ordered group-by-group (each
+    group's sort order preserved) and plotted as one heatmap column per
+    trial type, with a colored sidebar marking group membership when more
+    than one group exists.
+
+    Args:
+        data_dict (dict): Maps unit ID -> {'pre': {...}, 'post': {...},
+            'active': {...}}, each holding auROC arrays keyed by trial type
+            (e.g. 'TrialAligned_GO_auroc'). Missing keys are tolerated and
+            filled with NaN (a warning is printed for each).
+        SETTINGS_DICT (dict): Pipeline settings, notably ``OUTPUT_PATH``,
+            ``AUROC_BIN_SIZE``, ``AUROC_PRE_STIMULUS_DURATION``,
+            ``AUROC_POST_STIMULUS_DURATION``, ``AUROC_TRIALTYPES`` (dict of
+            trial_type -> (snippet_start, snippet_end) used for sorting),
+            ``SORT_BY_WHICH_TRIALTYPE``, and the optional
+            ``AUROC_GROUPING_FILE``/``AUROC_GROUPING_VARIABLE``/
+            ``AUROC_UNIQUE_GROUPS``/``AUROC_GROUP_COLORS`` for unit grouping.
+
+    Returns:
+        None. Writes ``auROC_heatmap.pdf`` under
+        ``<OUTPUT_PATH>/auROC_heatmaps``.
+    """
     output_path = SETTINGS_DICT['OUTPUT_PATH'] + sep + 'auROC_heatmaps'
     makedirs(output_path, exist_ok=True)
     heatmap_binsize = SETTINGS_DICT['AUROC_BIN_SIZE']

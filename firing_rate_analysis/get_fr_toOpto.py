@@ -28,11 +28,45 @@ def get_fr_toOpto(memory_path,
                     pre_stim_raster: dict | float = 1.,
                     post_stim_raster: dict | float = 1.
                   ):
-    """
-    Process spike data around opto onset and offset TTLs
-    Takes key files and writes two files:
-    1. Firing rates within window (_opto_firing_rate.csv)
-    2. All timestamped spikes during that window for timeseries analyses (_opto_spikes.json)
+    """Process spike data around opto onset and offset TTLs.
+
+    For each opto trial, computes baseline/response firing rates around both
+    LED onset and LED offset, and collects the zero-centered spike raster
+    around each event for later timeseries analyses. Firing rates are
+    appended as rows of the worker's ``<experiment_tag>_opto_firing_rate.csv``
+    (written to ``output_path``); rasters and per-trial FR arrays are added
+    directly onto ``cur_unitData`` (persisted to JSON separately by the caller).
+
+    Args:
+        memory_path (str): Path to the unit's spike-times file (whitespace-
+            delimited timestamps, loaded with ``np.genfromtxt``).
+        key_path_info (str): Path to this session's trialInfo CSV; only its
+            filename is used, as the session key under ``cur_unitData["Session"]``.
+        key_path_optoTTL (str or None): Path to the opto TTL CSV with
+            'LED_onset'/'LED_offset' columns. If None, this step is skipped
+            and ``cur_unitData`` is returned unchanged.
+        unit_id (str): Unit identifier, written into the output CSV.
+        output_path (str): Directory to write the firing-rate CSV into.
+        cur_unitData (dict): Running per-unit data structure to update in place.
+        experiment_tag (str, optional): Prefix for the output CSV name; if
+            None, the CSV name is empty (effectively disabling the CSV write).
+        first_cell_flag (bool): If True, (re)write the CSV with a header row;
+            if False, append without a header (assumes the file already exists).
+        breakpoint_offset (float): Seconds to add to each TTL timestamp to
+            align it with this unit's spike-time clock (for concatenated recordings).
+        baseline_duration_for_fr (dict or float): Window length (s) before
+            each onset/offset over which baseline FR is computed.
+        resp_duration_for_fr (dict or float): Window length (s) after each
+            onset/offset over which response FR is computed.
+        pre_stim_raster (dict or float): Seconds of spikes to include before
+            each onset/offset in the zero-centered raster.
+        post_stim_raster (dict or float): Seconds of spikes to include after
+            each onset/offset in the zero-centered raster.
+
+    Returns:
+        dict: ``cur_unitData``, updated with LED_onset/LED_offset timestamps,
+        zero-centered trial spikes, and baseline/response FR arrays for both
+        LED-on and LED-off events under this session's key.
     """
 
     # Load opto key files
