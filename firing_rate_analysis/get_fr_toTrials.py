@@ -34,7 +34,10 @@ def get_fr_toTrials(memory_path,
                     resptime_FR_end: dict | int = 1.8,
                     beforeresp_FR_start: dict | int = 0.5,
                     # For calculating pre-response firing rate (will be converted to negative)
-                    beforeresp_FR_end: dict | int = 0
+                    beforeresp_FR_end: dict | int = 0,
+                    spoutreturn_FR_start: dict | int = 0,
+                    # For calculating firing rate relative to the first spout return during the after-trial period
+                    spoutreturn_FR_end: dict | int = 0.5
                     ):
     """Process spike data around AM-sound trials.
 
@@ -50,7 +53,11 @@ def get_fr_toTrials(memory_path,
     Writes one row per trial per FR window to
     ``<experiment_tag>_AMsound_firing_rate.csv``, and stores the same data
     (plus per-trial spike rasters) onto ``cur_unitData`` for later
-    timeseries/z-score analyses.
+    timeseries/z-score analyses. Each output row/record also carries
+    ``SpoutReturn_latency`` (lag from the outcome-triggering spout offset to the
+    next spout onset), passed straight through from the trialInfo CSV when
+    ``helpers.recalculate_ePsych_responseLatency`` has populated it and NaN
+    otherwise (e.g. passive sessions, or sessions that pre-date that step).
 
     Args:
         memory_path (str): Path to the unit's spike-times file (whitespace-
@@ -91,11 +98,22 @@ def get_fr_toTrials(memory_path,
             the pre-response FR window begins (subtracted from response time).
         beforeresp_FR_end (dict or float): How far before response time (s)
             the pre-response FR window ends (subtracted from response time).
+        spoutreturn_FR_start (dict or float): Start offset (s, relative to the
+            first spout onset that falls within the after-trial window) of the
+            spout-return FR window.
+        spoutreturn_FR_end (dict or float): End offset (s, relative to that
+            first spout onset) of the spout-return FR window. If no spout onset
+            occurs during the after-trial window, the spout-return FR is NaN.
 
     Returns:
         dict: ``cur_unitData``, updated with per-trial metadata, zero-centered
         trial/response spike rasters, and all FR arrays for this session.
     """
+    def _spout_rate_in_window(event_times, win_start, win_end):
+        """Count spout events of `event_times` falling in [win_start, win_end) and convert to Hz."""
+        n_events = np.count_nonzero((event_times >= win_start) & (event_times < win_end))
+        return n_events / (win_end - win_start)
+
     # Load key files
     info_key_times = read_csv(key_path_info)
 
@@ -104,6 +122,13 @@ def get_fr_toTrials(memory_path,
 
     # The default is 0, so this will only make a difference if set at function call
     breakpoint_offset_time = breakpoint_offset
+
+    # Align trial timestamps to this unit's spike-time clock once, here, instead of
+    # repeatedly adding breakpoint_offset_time at every point of use below. This must
+    # happen before relevant_key_times is derived so both it and the previous_cr lookup
+    # (which searches the full info_key_times, including CR rows) see the adjusted values.
+    info_key_times['Trial_onset'] += breakpoint_offset_time
+    info_key_times['Trial_offset'] += breakpoint_offset_time
 
     # Check for opto tags. Add dummy tags if non-existent
     if 'JitOnset' not in info_key_times.columns:
@@ -114,7 +139,20 @@ def get_fr_toTrials(memory_path,
     # Grab all trials
     # These can be Hit, Miss or FA
     # CR trials are not included to save space, but you can remove this filter if you wish
-    relevant_key_times = info_key_times[(info_key_times['Reminder'] == 0) & (info_key_times['CR'] == 0)].copy()
+    relevant_key_times = info_key_times[info_key_times['CR'] == 0].copy()
+
+    # SpoutOffset_times/SpoutOnset_times only exist if recalculate_ePsych_responseLatency has been
+    # run on this session's trialInfo.csv — and that function explicitly skips passive sessions —
+    # so guard on column presence rather than assuming the columns are always there.
+    has_spout_offset_col = 'SpoutOffset_times' in info_key_times.columns
+    has_spout_onset_col = 'SpoutOnset_times' in info_key_times.columns
+
+    # SpoutReturn_latency (lag from the outcome-triggering spout offset to the next spout onset) is
+    # likewise only present once recalculate_ePsych_responseLatency has run, and never for passive
+    # sessions. Ensure the column exists so the per-trial CSV rows and the cur_unitData copy below
+    # always have something to reference; when it's missing every trial gets NaN.
+    if 'SpoutReturn_latency' not in relevant_key_times.columns:
+        relevant_key_times['SpoutReturn_latency'] = np.nan
 
     # Now grab spike times
     # Baseline will be the CR trial immediately preceding the current trial
@@ -124,10 +162,32 @@ def get_fr_toTrials(memory_path,
     aftertrial_FR_list = list()
     resptime_FR_list = list()
     beforeresp_FR_list = list()
+    spoutreturn_FR_list = list()
 
     # Actual spike timestamps around trial and spout offset
     zerocentered_trial_spikes = list()
     zerocentered_response_spikes = list()
+
+    # Per-trial spout offset/onset timestamps (zero-centered to trial onset, like the spike rasters)
+    spout_offset_times_list = list()
+    spout_onset_times_list = list()
+
+    # Spout offset/onset event rates (Hz) within the same windows as the FR lists above
+    spoutOffset_baseline_Hz_list = list()
+    spoutOffset_trial_Hz_list = list()
+    spoutOffset_trialOnset_Hz_list = list()
+    spoutOffset_aftertrial_Hz_list = list()
+    spoutOffset_resptime_Hz_list = list()
+    spoutOffset_beforeresp_Hz_list = list()
+    spoutOffset_spoutreturn_Hz_list = list()
+
+    spoutOnset_baseline_Hz_list = list()
+    spoutOnset_trial_Hz_list = list()
+    spoutOnset_trialOnset_Hz_list = list()
+    spoutOnset_aftertrial_Hz_list = list()
+    spoutOnset_resptime_Hz_list = list()
+    spoutOnset_beforeresp_Hz_list = list()
+    spoutOnset_spoutreturn_Hz_list = list()
 
     for dummy_index, cur_trial in relevant_key_times.iterrows():
         # Get current trial's response time (i.e., latency)
@@ -136,18 +196,24 @@ def get_fr_toTrials(memory_path,
         #   attempted to withdraw from spout before the shock, but returned for some reason. Handle these trials as you wish
         #   For true undetected misses, respLatency (if it exists) will always be after the AM period during the shock period
         if 'passive' not in key_path_info.lower():
-            # Get spike times around the current stimulus onset
+            # Get spike times around the current stimulus onset or response latency
             # For baseline, go to the previous trial that resulted in a correct rejection (NO-GO) which
             # may not be the immediately preceding trial
             # Also ensure the RespLatency is NaN, indicating that the animal was stable at the spout
-            try:
-                previous_cr = info_key_times[(info_key_times['CR'] == 1) &
-                                             (info_key_times['TrialID'] < cur_trial['TrialID']) &
-                                             np.isnan(info_key_times['RespLatency'])].iloc[-1]
-                previous_cr_onset = previous_cr['Trial_onset'] + breakpoint_offset_time
+            if cur_trial['Reminder'] == 1:
+                # Reminder trials don't have a meaningful preceding CR to search for — just use
+                # the baseline moment immediately before this trial's own onset instead.
+                previous_cr_onset = cur_trial['Trial_onset']
                 valid_baseline = True
-            except IndexError:  # In case there is no valid CR before current trial, make baseline firing = NaN
-                valid_baseline = False
+            else:
+                try:
+                    previous_cr = info_key_times[(info_key_times['CR'] == 1) &
+                                                 (info_key_times['TrialID'] < cur_trial['TrialID']) &
+                                                 np.isnan(info_key_times['RespLatency'])].iloc[-1]
+                    previous_cr_onset = previous_cr['Trial_onset']
+                    valid_baseline = True
+                except IndexError:  # In case there is no valid CR before current trial, make baseline firing = NaN
+                    valid_baseline = False
 
             cur_resptime = cur_trial['RespLatency']  # Either NA or >0
 
@@ -160,23 +226,54 @@ def get_fr_toTrials(memory_path,
             else:
                 cur_trial_type = 'CR'
 
+            # Parse this trial's SpoutOffset_times/SpoutOnset_times (semicolon-joined strings written by
+            # helpers.recalculate_ePsych_responseLatency) into arrays, and apply breakpoint_offset_time so
+            # they land on the same clock as cur_trial_onset/spike_times. Guard on column presence since
+            # recalculate_ePsych_responseLatency may not have been run on every session. An empty window
+            # comes back from pandas as NaN (float), not an empty string, so that's checked explicitly too.
+            if has_spout_offset_col:
+                raw_spout_offsets = cur_trial['SpoutOffset_times']
+                if isinstance(raw_spout_offsets, str) and raw_spout_offsets:
+                    cur_spout_offsets = np.array([float(t) for t in raw_spout_offsets.split(';')]) + breakpoint_offset_time
+                else:
+                    cur_spout_offsets = np.array([])
+            else:
+                cur_spout_offsets = np.array([])
+
+            if has_spout_onset_col:
+                raw_spout_onsets = cur_trial['SpoutOnset_times']
+                if isinstance(raw_spout_onsets, str) and raw_spout_onsets:
+                    cur_spout_onsets = np.array([float(t) for t in raw_spout_onsets.split(';')]) + breakpoint_offset_time
+                else:
+                    cur_spout_onsets = np.array([])
+            else:
+                cur_spout_onsets = np.array([])
+
         else:
-            # The only difference between active and passive sessions is that the respLatency is not considered for passive sessions,
-            # when gathering the baseline trial
+            # RespLatency is not considered for passive sessions when gathering the baseline trial
             try:
                 previous_cr = info_key_times[(info_key_times['CR'] == 1) &
                                              (info_key_times['TrialID'] < cur_trial['TrialID'])].iloc[-1]
-                previous_cr_onset = previous_cr['Trial_onset'] + breakpoint_offset_time
+                previous_cr_onset = previous_cr['Trial_onset']
                 valid_baseline = True
             except IndexError:  # In case there is no valid CR before current trial, make baseline firing = NaN
                 valid_baseline = False
             cur_resptime = 0
             cur_trial_type = 'Passive'
-        
-        # Add breakpoint to trial onset and offset
-        cur_trial_onset = cur_trial['Trial_onset'] + breakpoint_offset_time
-        cur_trial_offset = cur_trial['Trial_offset'] + breakpoint_offset_time
-        
+
+            # Passive sessions never have spout-related data — recalculate_ePsych_responseLatency
+            # skips them entirely, so SpoutOffset_times/SpoutOnset_times are never populated for these trials
+            cur_spout_offsets = np.array([])
+            cur_spout_onsets = np.array([])
+
+        # Trial_onset/Trial_offset already include breakpoint_offset_time (applied once, up front)
+        cur_trial_onset = cur_trial['Trial_onset']
+        cur_trial_offset = cur_trial['Trial_offset']
+
+        # Zero-center spout events to trial onset, matching the spike rasters
+        spout_offset_times_list.append(cur_spout_offsets - cur_trial_onset)
+        spout_onset_times_list.append(cur_spout_onsets - cur_trial_onset)
+
         # Use different onsets depending on trial type
         if type(trial_duration_for_fr) is dict:
             cur_trial_duration_for_fr_s = trial_duration_for_fr[cur_trial_type]
@@ -208,6 +305,13 @@ def get_fr_toTrials(memory_path,
         else:
             cur_beforeresp_start = beforeresp_FR_start
             cur_beforeresp_end = beforeresp_FR_end
+
+        if type(spoutreturn_FR_start) is dict:
+            cur_spoutreturn_start = spoutreturn_FR_start[cur_trial_type]
+            cur_spoutreturn_end = spoutreturn_FR_end[cur_trial_type]
+        else:
+            cur_spoutreturn_start = spoutreturn_FR_start
+            cur_spoutreturn_end = spoutreturn_FR_end
 
         # SPIKE TIMES
         # Get spikes in the interval [trial_onset - pre_stim_raster; trial_onset + post_stim_raster]
@@ -251,16 +355,42 @@ def get_fr_toTrials(memory_path,
             (spike_times >= (cur_trial_onset + cur_resptime - cur_beforeresp_start)) &
             (spike_times < (cur_trial_onset + cur_resptime - cur_beforeresp_end))]
 
+        # SpoutReturn window: anchored to the first spout onset (spout return) that falls within
+        # this trial's after-trial window. If the animal never returns to the spout during that
+        # window (or there is no spout data at all, e.g. passive sessions), the window is undefined
+        # and every SpoutReturn quantity below is NaN.
+        aftertrial_window_start = cur_trial_onset + cur_aftertrial_start
+        aftertrial_window_end = cur_trial_onset + cur_aftertrial_end
+        spout_returns_in_aftertrial = cur_spout_onsets[
+            (cur_spout_onsets >= aftertrial_window_start) &
+            (cur_spout_onsets < aftertrial_window_end)]
+        if len(spout_returns_in_aftertrial) > 0:
+            first_spout_return = spout_returns_in_aftertrial[0]
+            spoutreturn_window_start = first_spout_return + cur_spoutreturn_start
+            spoutreturn_window_end = first_spout_return + cur_spoutreturn_end
+            spoutreturn_spikes = spike_times[
+                (spike_times >= spoutreturn_window_start) &
+                (spike_times < spoutreturn_window_end)]
+        else:
+            first_spout_return = np.nan
+            spoutreturn_window_start = np.nan
+            spoutreturn_window_end = np.nan
+            spoutreturn_spikes = None
+
         # FR calculations
         if valid_baseline:
             cur_nonAM_FR = len(nonAM_spikes) / nonAM_duration_for_fr
         else:
-            cur_nonAM_FR = None
+            cur_nonAM_FR = np.nan
         cur_trial_FR = len(trial_spikes) / cur_trial_duration_for_fr_s
         cur_trialOnset_FR = len(trialOnset_spikes) / cur_trialOnset_duration_for_fr_s
         cur_aftertrial_fr = len(aftertrial_spikes) / (cur_aftertrial_end - cur_aftertrial_start)
         cur_resptime_fr = len(resptime_spikes) / (cur_resptime_end - cur_resptime_start)
         cur_beforeresp_fr = len(beforeresp_spikes) / (cur_beforeresp_start - cur_beforeresp_end)
+        if spoutreturn_spikes is None:
+            cur_spoutreturn_fr = np.nan
+        else:
+            cur_spoutreturn_fr = len(spoutreturn_spikes) / (cur_spoutreturn_end - cur_spoutreturn_start)
 
         nonAM_FR_list.append(cur_nonAM_FR)
         trial_FR_list.append(cur_trial_FR)
@@ -268,6 +398,71 @@ def get_fr_toTrials(memory_path,
         aftertrial_FR_list.append(cur_aftertrial_fr)
         resptime_FR_list.append(cur_resptime_fr)
         beforeresp_FR_list.append(cur_beforeresp_fr)
+        spoutreturn_FR_list.append(cur_spoutreturn_fr)
+
+        # SPOUT EVENT RATES (Hz) within the exact same windows as the FR calculations above
+        if valid_baseline:
+            cur_nonAM_spoutOffset_Hz = _spout_rate_in_window(
+                cur_spout_offsets, previous_cr_onset, previous_cr_onset + nonAM_duration_for_fr)
+            cur_nonAM_spoutOnset_Hz = _spout_rate_in_window(
+                cur_spout_onsets, previous_cr_onset, previous_cr_onset + nonAM_duration_for_fr)
+        else:
+            cur_nonAM_spoutOffset_Hz = np.nan
+            cur_nonAM_spoutOnset_Hz = np.nan
+
+        cur_trial_spoutOffset_Hz = _spout_rate_in_window(
+            cur_spout_offsets, cur_trial_onset, cur_trial_onset + cur_trial_duration_for_fr_s)
+        cur_trial_spoutOnset_Hz = _spout_rate_in_window(
+            cur_spout_onsets, cur_trial_onset, cur_trial_onset + cur_trial_duration_for_fr_s)
+
+        cur_trialOnset_spoutOffset_Hz = _spout_rate_in_window(
+            cur_spout_offsets, cur_trial_onset, cur_trial_onset + cur_trialOnset_duration_for_fr_s)
+        cur_trialOnset_spoutOnset_Hz = _spout_rate_in_window(
+            cur_spout_onsets, cur_trial_onset, cur_trial_onset + cur_trialOnset_duration_for_fr_s)
+
+        cur_aftertrial_spoutOffset_Hz = _spout_rate_in_window(
+            cur_spout_offsets, cur_trial_onset + cur_aftertrial_start, cur_trial_onset + cur_aftertrial_end)
+        cur_aftertrial_spoutOnset_Hz = _spout_rate_in_window(
+            cur_spout_onsets, cur_trial_onset + cur_aftertrial_start, cur_trial_onset + cur_aftertrial_end)
+
+        cur_resptime_spoutOffset_Hz = _spout_rate_in_window(
+            cur_spout_offsets, cur_trial_onset + cur_resptime + cur_resptime_start,
+            cur_trial_onset + cur_resptime + cur_resptime_end)
+        cur_resptime_spoutOnset_Hz = _spout_rate_in_window(
+            cur_spout_onsets, cur_trial_onset + cur_resptime + cur_resptime_start,
+            cur_trial_onset + cur_resptime + cur_resptime_end)
+
+        cur_beforeresp_spoutOffset_Hz = _spout_rate_in_window(
+            cur_spout_offsets, cur_trial_onset + cur_resptime - cur_beforeresp_start,
+            cur_trial_onset + cur_resptime - cur_beforeresp_end)
+        cur_beforeresp_spoutOnset_Hz = _spout_rate_in_window(
+            cur_spout_onsets, cur_trial_onset + cur_resptime - cur_beforeresp_start,
+            cur_trial_onset + cur_resptime - cur_beforeresp_end)
+
+        if spoutreturn_spikes is None:
+            cur_spoutreturn_spoutOffset_Hz = np.nan
+            cur_spoutreturn_spoutOnset_Hz = np.nan
+        else:
+            cur_spoutreturn_spoutOffset_Hz = _spout_rate_in_window(
+                cur_spout_offsets, spoutreturn_window_start, spoutreturn_window_end)
+            cur_spoutreturn_spoutOnset_Hz = _spout_rate_in_window(
+                cur_spout_onsets, spoutreturn_window_start, spoutreturn_window_end)
+
+        spoutOffset_baseline_Hz_list.append(cur_nonAM_spoutOffset_Hz)
+        spoutOffset_trial_Hz_list.append(cur_trial_spoutOffset_Hz)
+        spoutOffset_trialOnset_Hz_list.append(cur_trialOnset_spoutOffset_Hz)
+        spoutOffset_aftertrial_Hz_list.append(cur_aftertrial_spoutOffset_Hz)
+        spoutOffset_resptime_Hz_list.append(cur_resptime_spoutOffset_Hz)
+        spoutOffset_beforeresp_Hz_list.append(cur_beforeresp_spoutOffset_Hz)
+        spoutOffset_spoutreturn_Hz_list.append(cur_spoutreturn_spoutOffset_Hz)
+
+        spoutOnset_baseline_Hz_list.append(cur_nonAM_spoutOnset_Hz)
+        spoutOnset_trial_Hz_list.append(cur_trial_spoutOnset_Hz)
+        spoutOnset_trialOnset_Hz_list.append(cur_trialOnset_spoutOnset_Hz)
+        spoutOnset_aftertrial_Hz_list.append(cur_aftertrial_spoutOnset_Hz)
+        spoutOnset_resptime_Hz_list.append(cur_resptime_spoutOnset_Hz)
+        spoutOnset_beforeresp_Hz_list.append(cur_beforeresp_spoutOnset_Hz)
+        spoutOnset_spoutreturn_Hz_list.append(cur_spoutreturn_spoutOnset_Hz)
 
     # Cap floating point precision for optimized memory storage
     nonAM_FR_list = np.round(nonAM_FR_list, 4)
@@ -276,10 +471,30 @@ def get_fr_toTrials(memory_path,
     aftertrial_FR_list = np.round(aftertrial_FR_list, 4)
     resptime_FR_list = np.round(resptime_FR_list, 4)
     beforeresp_FR_list = np.round(beforeresp_FR_list, 4)
+    spoutreturn_FR_list = np.round(spoutreturn_FR_list, 4)
     zerocentered_trial_spikes = [np.round(_spikes, 4) for _spikes in zerocentered_trial_spikes]
     zerocentered_response_spikes = [np.round(_spikes, 4) for _spikes in zerocentered_response_spikes]
-    relevant_key_times.loc[:, ['Trial_onset', 'Trial_offset', 'RespLatency']] = (
-        relevant_key_times.loc[:, ['Trial_onset', 'Trial_offset', 'RespLatency']].round(4)
+    spout_offset_times_list = [np.round(_spouts, 4) for _spouts in spout_offset_times_list]
+    spout_onset_times_list = [np.round(_spouts, 4) for _spouts in spout_onset_times_list]
+
+    spoutOffset_baseline_Hz_list = np.round(spoutOffset_baseline_Hz_list, 4)
+    spoutOffset_trial_Hz_list = np.round(spoutOffset_trial_Hz_list, 4)
+    spoutOffset_trialOnset_Hz_list = np.round(spoutOffset_trialOnset_Hz_list, 4)
+    spoutOffset_aftertrial_Hz_list = np.round(spoutOffset_aftertrial_Hz_list, 4)
+    spoutOffset_resptime_Hz_list = np.round(spoutOffset_resptime_Hz_list, 4)
+    spoutOffset_beforeresp_Hz_list = np.round(spoutOffset_beforeresp_Hz_list, 4)
+    spoutOffset_spoutreturn_Hz_list = np.round(spoutOffset_spoutreturn_Hz_list, 4)
+
+    spoutOnset_baseline_Hz_list = np.round(spoutOnset_baseline_Hz_list, 4)
+    spoutOnset_trial_Hz_list = np.round(spoutOnset_trial_Hz_list, 4)
+    spoutOnset_trialOnset_Hz_list = np.round(spoutOnset_trialOnset_Hz_list, 4)
+    spoutOnset_aftertrial_Hz_list = np.round(spoutOnset_aftertrial_Hz_list, 4)
+    spoutOnset_resptime_Hz_list = np.round(spoutOnset_resptime_Hz_list, 4)
+    spoutOnset_beforeresp_Hz_list = np.round(spoutOnset_beforeresp_Hz_list, 4)
+    spoutOnset_spoutreturn_Hz_list = np.round(spoutOnset_spoutreturn_Hz_list, 4)
+
+    relevant_key_times.loc[:, ['Trial_onset', 'Trial_offset', 'RespLatency', 'SpoutReturn_latency']] = (
+        relevant_key_times.loc[:, ['Trial_onset', 'Trial_offset', 'RespLatency', 'SpoutReturn_latency']].round(4)
     )
     relevant_key_times.loc[:, 'AMdepth'] = relevant_key_times['AMdepth'].round(2)
 
@@ -299,19 +514,30 @@ def get_fr_toTrials(memory_path,
         if write_or_append_flag == 'w':
             writer.writerow(['Unit'] + ['Key_file'] + ['TrialID'] + ['AMdepth'] + ['Reminder'] + ['ShockFlag'] +
                             ['Hit'] + ['Miss'] + ['CR'] + ['FA'] + ['Period'] + ['Trial_onset'] + ['Trial_offset'] +
-                            ['JitOnset'] + ['LED_TTL'] + ['RespLatency'] + ['FR_Hz']
+                            ['JitOnset'] + ['LED_TTL'] + ['RespLatency'] + ['SpoutReturn_latency'] +
+                            ['FR_Hz'] + ['SpoutOffset_Hz'] + ['SpoutOnset_Hz']
                             )
         for dummy_idx in range(0, len(nonAM_FR_list)):
             cur_row = relevant_key_times.iloc[dummy_idx, :]
 
-            for (trial_period, FR_list) in  zip(
+            for (trial_period, FR_list, spoutOffset_Hz_list, spoutOnset_Hz_list) in zip(
                 # Trial periods
                 ('Baseline', 'Trial', 'TrialOnset',
-                 'Aftertrial', 'RespTime', 'BeforeResp'),
+                 'Aftertrial', 'RespTime', 'BeforeResp', 'SpoutReturn'),
 
                 # FR lists
                 (nonAM_FR_list, trial_FR_list, trialOnset_FR_list,
-                 aftertrial_FR_list, resptime_FR_list, beforeresp_FR_list)
+                 aftertrial_FR_list, resptime_FR_list, beforeresp_FR_list, spoutreturn_FR_list),
+
+                # Spout offset Hz lists (same per-period windows as the FR lists above)
+                (spoutOffset_baseline_Hz_list, spoutOffset_trial_Hz_list, spoutOffset_trialOnset_Hz_list,
+                 spoutOffset_aftertrial_Hz_list, spoutOffset_resptime_Hz_list, spoutOffset_beforeresp_Hz_list,
+                 spoutOffset_spoutreturn_Hz_list),
+
+                # Spout onset Hz lists (same per-period windows as the FR lists above)
+                (spoutOnset_baseline_Hz_list, spoutOnset_trial_Hz_list, spoutOnset_trialOnset_Hz_list,
+                 spoutOnset_aftertrial_Hz_list, spoutOnset_resptime_Hz_list, spoutOnset_beforeresp_Hz_list,
+                 spoutOnset_spoutreturn_Hz_list)
                 ):
                 try:
                     writer.writerow([unit_id] + [split(REGEX_SEP, key_path_info)[-1][:-4]] +
@@ -323,24 +549,30 @@ def get_fr_toTrials(memory_path,
                                 [cur_row['JitOnset']] +
                                 [cur_row['LED_TTL']] +
                                 [cur_row['RespLatency']] +
-                                [FR_list[dummy_idx]])
+                                [cur_row['SpoutReturn_latency']] +
+                                [FR_list[dummy_idx]] +
+                                [spoutOffset_Hz_list[dummy_idx]] +
+                                [spoutOnset_Hz_list[dummy_idx]])
                 except KeyError:
                     pass
 
     # Add all info to unitData
     trialInfo_filename = split(REGEX_SEP, key_path_info)[-1][:-4]
     for key_name in ('TrialID', 'Reminder', 'ShockFlag', 'JitOnset', 'LED_TTL', 'Hit', 'Miss', 'CR', 'FA',
-                     'Trial_onset', 'Trial_offset', 'RespLatency'):
+                     'Trial_onset', 'Trial_offset', 'RespLatency', 'SpoutReturn_latency'):
         cur_unitData["Session"][trialInfo_filename][key_name] = relevant_key_times[key_name].values
 
     cur_unitData["Session"][trialInfo_filename]['AMdepth'] = relevant_key_times['AMdepth'].values
     cur_unitData["Session"][trialInfo_filename]['Trial_spikes'] = zerocentered_trial_spikes
     cur_unitData["Session"][trialInfo_filename]['Response_spikes'] = zerocentered_response_spikes
+    cur_unitData["Session"][trialInfo_filename]['SpoutOffset_times'] = spout_offset_times_list
+    cur_unitData["Session"][trialInfo_filename]['SpoutOnset_times'] = spout_onset_times_list
     cur_unitData["Session"][trialInfo_filename]['Baseline_FR'] = nonAM_FR_list
     cur_unitData["Session"][trialInfo_filename]['Trial_FR'] = trial_FR_list
     cur_unitData["Session"][trialInfo_filename]['TrialOnset_FR'] = trialOnset_FR_list
     cur_unitData["Session"][trialInfo_filename]['Aftertrial_FR'] = aftertrial_FR_list
     cur_unitData["Session"][trialInfo_filename]['ResponseTime_FR'] = resptime_FR_list
     cur_unitData["Session"][trialInfo_filename]['BeforeResponse_FR'] = beforeresp_FR_list
+    cur_unitData["Session"][trialInfo_filename]['SpoutReturn_FR'] = spoutreturn_FR_list
 
     return cur_unitData

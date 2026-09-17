@@ -218,7 +218,8 @@ def process_metadata(subject_id, key_path_info, key_paths_spoutTTL, key_paths_op
         optoTTL_path_finder = [i for i, x in enumerate(optoTTL_path_finder) if x is not None][0]
         key_path_optoTTL = key_paths_optoTTL[optoTTL_path_finder]
     except IndexError:
-        print('Opto TTL file not found for ' + subject_id + ', file ' + key_path_info+ '. Ignore if no opto was done.')
+        # Prevent this from printing for now
+        # print('Opto TTL file not found for ' + subject_id + ', file ' + key_path_info+ '. Ignore if no opto was done.')
         key_path_optoTTL = None
 
     # Find appropriate breakpoint for file if it exists

@@ -63,6 +63,8 @@ def run_pipeline(input_list):
     resptime_FR_end = SETTINGS_DICT['RESPTIME_FR_END']
     beforeresp_FR_start = SETTINGS_DICT['BEFORERESP_FR_START']
     beforeresp_FR_end = SETTINGS_DICT['BEFORERESP_FR_END']
+    spoutreturn_FR_start = SETTINGS_DICT['SPOUTRETURN_FR_START']
+    spoutreturn_FR_end = SETTINGS_DICT['SPOUTRETURN_FR_END']
 
     pretrial_duration_for_spiketimes = SETTINGS_DICT['PRETRIAL_DURATION_FOR_SPIKETIMES']
     posttrial_duration_for_spiketimes = SETTINGS_DICT['POSTTRIAL_DURATION_FOR_SPIKETIMES']
@@ -107,7 +109,8 @@ def run_pipeline(input_list):
                                        post_stim_raster=posttrial_duration_for_spiketimes,
                                        aftertrial_FR_start=aftertrial_FR_start, aftertrial_FR_end=aftertrial_FR_end,
                                        resptime_FR_start=resptime_FR_start, resptime_FR_end=resptime_FR_end,
-                                       beforeresp_FR_start=beforeresp_FR_start, beforeresp_FR_end=beforeresp_FR_end)
+                                       beforeresp_FR_start=beforeresp_FR_start, beforeresp_FR_end=beforeresp_FR_end,
+                                       spoutreturn_FR_start=spoutreturn_FR_start, spoutreturn_FR_end=spoutreturn_FR_end)
         write_json(cur_unitData, output_path + sep + 'JSON files', cur_unitData['Unit'] + '_unitData.json')
 
         if key_path_optoTTL is not None:

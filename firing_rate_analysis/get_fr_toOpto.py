@@ -73,7 +73,8 @@ def get_fr_toOpto(memory_path,
     if key_path_optoTTL is not None:
         opto_key_times = read_csv(key_path_optoTTL)
     else:
-        print('No opto TTL key file found. Skipping this step for: ' + memory_path)
+        # Keep this silent for now
+        # print('No opto TTL key file found. Skipping this step for: ' + memory_path)
         return cur_unitData
 
     # Load spike times
